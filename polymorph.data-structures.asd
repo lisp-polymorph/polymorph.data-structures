@@ -8,7 +8,7 @@
     :serial t
     :depends-on (#:adhoc-polymorphic-functions #:compiler-macro #:polymorph.utility)
     :components ((:file "package")
-                 (:file "double-linked-list")
-                 (:file "ring-buffer")
-                 (:file "red-black-tree")
-                 (:file "avl-tree")))
+                 (:file "double-linked-list")))
+                 ;(:file "ring-buffer")
+                 ;(:file "red-black-tree")
+                 ;(:file "avl-tree")))

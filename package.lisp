@@ -1,4 +1,5 @@
 ;;;; package.lisp
 
 (defpackage #:polymorph.data-structures
-  (:use #:cl #:adhoc-polymorphic-functions #:polymorph.utility))
+  (:use #:cl #:adhoc-polymorphic-functions #:polymorph.utility)
+  (:export #:dl-list))

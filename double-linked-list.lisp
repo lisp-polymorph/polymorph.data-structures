@@ -135,9 +135,12 @@
 
 
 
-(deftype dl-list (typename) (gethash (cons 'dl-list
-                                           (if (listp typename) typename (list typename)))
-                                     *unparamterize-name*))
+(deftype dl-list (typename)
+  (unless (gethash (cons 'dl-list (if (listp type) type (list type))) *unparamterize-name*)
+    (ensure-dl-list type))
+  (gethash (cons 'dl-list
+                 (if (listp typename) typename (list typename))
+                 *unparamterize-name*)))
 
 
 (defmacro do-nodes (names dl-list &environment env &body body)
