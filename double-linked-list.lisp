@@ -12,7 +12,6 @@
 (define-polymorphic-function push-back (data container))
 (define-polymorphic-function pop-front (container))
 (define-polymorphic-function pop-back (container))
-(define-polymorphic-function size (container))
 (define-polymorphic-function empty-p (container))
 
 
