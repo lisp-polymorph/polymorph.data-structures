@@ -6,7 +6,7 @@
     :license  "MIT"
     :version "0.5"
     :serial t
-    :depends-on (#:adhoc-polymorphic-functions #:compiler-macro #:polymorph.utility)
+    :depends-on (#:compiler-macro #:polymorph.utility)
     :components ((:file "package")
                  (:file "polymorphs")
                  (:file "double-linked-list")
