@@ -91,7 +91,7 @@
 
            (defpolymorph pop-front ((dl-list ,dl-code)) ,type
                          (if (= 0 (size dl-list))
-                             (error 'simple-error :format-control "Cannot pop from an empty list")
+                             (error 'simple-error :format-control "Cannot pop from an empty list.")
                              (let* ((anchor (anchor dl-list))
                                     (current (next anchor))
                                     (data (data current)))
@@ -102,7 +102,7 @@
 
            (defpolymorph pop-back ((dl-list ,dl-code)) ,type
                          (if (= 0 (size dl-list))
-                             (error 'simple-error :format-control "Cannot pop from an empty list")
+                             (error 'simple-error :format-control "Cannot pop from an empty list.")
                              (let* ((anchor (anchor dl-list))
                                     (current (prev anchor))
                                     (data (data current)))
