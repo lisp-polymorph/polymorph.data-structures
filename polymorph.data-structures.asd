@@ -6,10 +6,12 @@
     :license  "MIT"
     :version "0.5"
     :serial t
-    :depends-on (#:compiler-macro #:polymorph.utility)
-    :components ((:file "package")
-                 (:file "polymorphs")
-                 (:file "double-linked-list")
-                 (:file "ring-buffer")))
-               ;(:file "red-black-tree")
-               ;(:file "avl-tree")))
+    :depends-on (#:polymorph.access #:polymorph.maths #:polymorph.copy-cast)
+    :components ((:module "src"
+                  :components
+                  ((:file "package")
+                   (:file "polymorphs")
+                   (:file "double-linked-list")
+                   (:file "ring-buffer")))))
+                  ;(:file "red-black-tree")
+                  ;(:file "avl-tree")))

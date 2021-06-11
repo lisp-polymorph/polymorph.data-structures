@@ -4,15 +4,15 @@
 
 (defparameter *unparamterize-name* (make-hash-table :test #'equalp))
 
-(define-polymorphic-function front (container))
-(define-polymorphic-function back (container))
-(define-polymorphic-function (setf front) (new container))
-(define-polymorphic-function (setf back) (new container))
+;(define-polymorphic-function front (container))
+;(define-polymorphic-function back (container))
+;(define-polymorphic-function (setf front) (new container))
+;(define-polymorphic-function (setf back) (new container))
 (define-polymorphic-function push-front (data container))
 (define-polymorphic-function push-back (data container))
 (define-polymorphic-function pop-front (container))
 (define-polymorphic-function pop-back (container))
-(define-polymorphic-function empty-p (container))
+;(define-polymorphic-function empty-p (container))
 
 
 (define-polymorphic-function prev (node) :overwrite t)
@@ -24,5 +24,5 @@
 (define-polymorphic-function (setf next) (new node) :overwrite t)
 
 (define-polymorphic-function anchor (container) :overwrite t)
-(define-polymorphic-function size (container) :overwrite t)
+;(define-polymorphic-function size (container) :overwrite t)
 (define-polymorphic-function (setf size) (new container) :overwrite t)
