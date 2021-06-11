@@ -42,12 +42,12 @@
 
 (defpolymorph front ((buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (aref (ring-buffer-data buf) (ring-buffer-begin buf))))
 
 (defpolymorph (setf front) ((new fixnum) (buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (setf (aref (ring-buffer-data buf) (ring-buffer-begin buf)) new)))
 
 (defpolymorph push-front ((new fixnum) (buf ring-buffer)) fixnum
@@ -63,7 +63,7 @@
 
 (defpolymorph pop-front ((buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (prog2
           (when (> (length (ring-buffer-data buf)) (* 3 (ring-buffer-size buf)))
             (%resize buf (ring-buffer-size buf)))
@@ -79,12 +79,12 @@
 
 (defpolymorph back ((buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (aref (ring-buffer-data buf) (1- (ring-buffer-begin buf)))))
 
 (defpolymorph (setf back) ((new fixnum) (buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (setf (aref (ring-buffer-data buf) (1- (ring-buffer-begin buf))) new)))
 
 (defpolymorph push-back ((new fixnum) (buf ring-buffer)) fixnum
@@ -101,7 +101,7 @@
 
 (defpolymorph pop-back ((buf ring-buffer)) fixnum
   (if (= 0 (ring-buffer-size buf))
-      (error "Front requires a non-empty biffer")
+      (error "Front requires a non-empty buffer.")
       (progn
         (when (> (length (ring-buffer-data buf)) (* 3 (ring-buffer-size buf)))
           (%resize buf (ring-buffer-size buf)))
