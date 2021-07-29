@@ -71,44 +71,44 @@
          (defpolymorph push-front ((data ,type) (dl-list ,dl-code)) ,type
            (let* ((anchor (anchor dl-list))
                   (current (next anchor))
+                  (new-node (,(intern (format nil "MAKE-~s" node-code))
+                             :data data :next current)))
+             (setf (prev current) new-node
+                   (next anchor) new-node)
+             (incf (size dl-list))
+             data))
+
+         (defpolymorph push-back ((data ,type) (dl-list ,dl-code)) ,type
+           (let* ((anchor (anchor dl-list))
+                  (current (prev anchor))
                   (new-node (,(intern (format nil "MAKE-~s" node-code)))))
-                 :data data :next current)))
-       (setf (prev current) new-node
-             (next anchor) new-node)
-       (incf (size dl-list))
-       data
+            :data data :prev current
+             (setf (next current) new-node
+                   (prev anchor) new-node)
+             (incf (size dl-list))
+             data))
 
-       (defpolymorph push-back ((data ,type) (dl-list ,dl-code)) ,type
-         (let* ((anchor (anchor dl-list))
-                (current (prev anchor))
-                (new-node (,(intern (format nil "MAKE-~s" node-code)))))
-               :data data :prev current
-           (setf (next current) new-node
-                 (prev anchor) new-node)
-           (incf (size dl-list))
-           data))
+         (defpolymorph pop-front ((dl-list ,dl-code)) ,type
+           (if (= 0 (size dl-list))
+               (error 'simple-error :format-control "Cannot pop from an empty list")
+               (let* ((anchor (anchor dl-list))
+                      (current (next anchor))
+                      (data (data current)))
+                 (setf (prev (next current)) nil
+                       (next anchor) (next current))
+                 (decf (size dl-list))
+                 data)))
 
-       (defpolymorph pop-front ((dl-list ,dl-code)) ,type
-         (if (= 0 (size dl-list))
-             (error 'simple-error :format-control "Cannot pop from an empty list")
-             (let* ((anchor (anchor dl-list))
-                    (current (next anchor))
-                    (data (data current)))
-               (setf (prev (next current)) nil
-                     (next anchor) (next current))
-               (decf (size dl-list))
-               data)))
-
-       (defpolymorph pop-back ((dl-list ,dl-code)) ,type
-         (if (= 0 (size dl-list))
-             (error 'simple-error :format-control "Cannot pop from an empty list")
-             (let* ((anchor (anchor dl-list))
-                    (current (prev anchor))
-                    (data (data current)))
-               (setf (next (prev current)) nil
-                     (prev anchor) (prev current))
-               (decf (size dl-list))
-               data))))))
+         (defpolymorph pop-back ((dl-list ,dl-code)) ,type
+           (if (= 0 (size dl-list))
+               (error 'simple-error :format-control "Cannot pop from an empty list")
+               (let* ((anchor (anchor dl-list))
+                      (current (prev anchor))
+                      (data (data current)))
+                 (setf (next (prev current)) nil
+                       (prev anchor) (prev current))
+                 (decf (size dl-list))
+                 data)))))))
 
 
 
