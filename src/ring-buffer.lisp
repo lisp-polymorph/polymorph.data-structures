@@ -1,9 +1,7 @@
 
 (in-package #:polymorph.data-structures)
 
-(deftype ind () '(unsigned-byte 64)) ;; TODO ??
-
-(defmacro define-ring-buffer (type &optional (default (introspect-ctype:default type))
+(defmacro define-ring-buffer (type &optional (default (default type))
                                      force-p)
   (unless (and (not force-p)
                (gethash (cons 'ring-buffer (if (listp type) type (list type)))
@@ -224,7 +222,7 @@
                      (set-at))))))))))
 
 
-(defun ensure-ring-buffer (type &optional (default (introspect-ctype:default type)))
+(defun ensure-ring-buffer (type &optional (default (default type)))
   (eval `(define-ring-buffer ,type ,default)))
 
 

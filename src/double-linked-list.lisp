@@ -1,10 +1,10 @@
 
 (in-package #:polymorph.data-structures)
 
-(defun ensure-dl-list (type &optional (default (introspect-ctype:default type)))
+(defun ensure-dl-list (type &optional (default (default type)))
   (eval `(define-double-linked-list ,type ,default)))
 
-(defmacro define-double-linked-list (type &optional (default (introspect-ctype:default type)))
+(defmacro define-double-linked-list (type &optional (default (default type)))
   (unless (gethash (cons 'dl-list (if (listp type) type (list type))) *unparamterize-name*)
     (let* ((node-type (cons 'dl-node (if (listp type) type (list type))))
            (dl-type  (cons 'dl-list (if (listp type) type (list type))))
