@@ -40,7 +40,7 @@
            (setf (,(intern (format nil "~s-DATA" buf-code)) buf) new))
 
 
-         (defpolymorph %resize ((buf ,buf-code) (newsize ind)) null
+         (defpolymorph (%resize :inline nil) ((buf ,buf-code) (newsize ind)) null
            (let ((newdata (make-array newsize :element-type ',type
                                               :initial-element ,default))
                  (olddata (data buf))
@@ -58,7 +58,9 @@
                         (loop :for i :from front :below (length olddata)
                               :do (setf (aref newdata (+ i (- newsize (length olddata))))
                                         (aref olddata i)))
-                        (incf (begin buf) (- newsize (length olddata)))))
+                        (setf (begin buf) (the ind
+                                               (- (begin buf)
+                                                  (- newsize (length olddata)))))))
              (setf (data buf) newdata)
              nil))
 
@@ -75,13 +77,13 @@
 
          (defpolymorph push-front ((new ,type) (buf ,buf-code)) ,type
            (when (= (length (data buf)) (size buf))
-             (%resize buf (* 2 (+ 1 (length (data buf))))))
+             (%resize buf (the ind (* 2 (+ 1 (length (data buf)))))))
            (setf (begin buf)
-                 (if (= 0 (begin buf))
-                     (- (length (data buf)) 1)
-                     (- (begin buf) 1)))
+                 (the ind (if (= 0 (begin buf))
+                              (- (length (data buf)) 1)
+                              (- (begin buf) 1))))
            (setf (aref (data buf) (begin buf)) new)
-           (incf (size buf))
+           (setf (size buf) (the ind (1+ (size buf))))
            new)
 
          (defpolymorph pop-front ((buf ,buf-code)) ,type
@@ -92,10 +94,10 @@
                  (when (> (length (data buf)) (* 3 (size buf)))
                    (%resize buf (size buf)))
                  (setf (begin buf)
-                       (if (= (1- (length (data buf))) (begin buf))
-                           0
-                           (1+ (begin buf))))
-                 (decf (size buf)))))
+                       (the ind (if (= (1- (length (data buf))) (begin buf))
+                                    0
+                                    (1+ (begin buf)))))
+                 (setf (size buf) (the ind (1- (size buf)))))))
 
 
          (defpolymorph back ((buf ,buf-code)) ,type
@@ -116,10 +118,10 @@
              (%resize buf (* 2 (+ 1 (length (data buf))))))
            (setf (aref (data buf) (end buf)) new)
            (setf (end buf)
-                 (if (= (1- (length (data buf))) (end buf))
-                     0
-                     (1+ (end buf))))
-           (incf (size buf))
+                 (the ind (if (= (1- (length (data buf))) (end buf))
+                              0
+                              (1+ (end buf)))))
+           (setf (size buf) (the ind (1+ (size buf))))
            new)
 
 
@@ -130,10 +132,10 @@
                  (when (> (length (data buf)) (* 3 (size buf)))
                    (%resize buf (size buf)))
                  (setf (end buf)
-                       (if (= 0 (end buf))
-                           (1- (length (data buf)))
-                           (1- (end buf))))
-                 (decf (size buf))
+                       (the ind (if (= 0 (end buf))
+                                    (1- (length (data buf)))
+                                    (1- (end buf)))))
+                 (setf (size buf) (the ind (1- (size buf))))
                  (aref (data buf) (end buf)))))
 
          (defpolymorph empty-p ((buf ,buf-code)) boolean
@@ -228,11 +230,14 @@
 
 
 (defun ring-buffer (type &optional initial)
-  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)
+  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                   *unparamterize-name*)
     (ensure-ring-buffer type))
   (let ((l (length initial)))
-    (funcall (intern (format nil "MAKE-~s"
-                             (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)))
+    (funcall (intern
+              (format nil "MAKE-~s"
+                      (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                               *unparamterize-name*)))
 
              :size l
              :data (make-array l :element-type type
@@ -243,18 +248,20 @@
   (let ((type (eval type))
         (l (gensym "L"))
         (init (gensym "INIT")))
-    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)
+    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                     *unparamterize-name*)
       (ensure-ring-buffer type))
     `(let* ((,init ,initial)
             (,l (length ,init)))
        (,(intern (format nil "MAKE-~s"
-                         (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)))
+                         (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                                  *unparamterize-name*)))
 
         :size ,l
         :data (make-array ,l :element-type ',type
                              :initial-contents ,init)))))
 
-(defun adhoc-test ()
+(defun ring-buffer-adhoc-test ()
   (let ((b (ring-buffer 'fixnum)))
     (push-front 1 b)
     (push-front 2 b)
