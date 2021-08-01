@@ -6,35 +6,38 @@
   (unless (and (not force-p)
                (gethash (cons 'priority-queue (if (listp type) type (list type)))
                         *unparamterize-name*))
-    (let* ((buf-type (cons 'priority-queue (if (listp type) type (list type))))
-           (buf-code (gentemp "PRIORITY-QUEUE")))
+    (let* ((queue-type (cons 'priority-queue (if (listp type) type (list type))))
+           (queue-code (gentemp "PRIORITY-QUEUE")))
 
       `(eval-when (:compile-toplevel :load-toplevel :execute)
-         (defstruct ,buf-code
+         (defstruct ,queue-code
            (data (make-array 256 :element-type ',type :initial-element ,default)
             :type (simple-array ,type (cl:*)))
            (size 1 :type ind))
 
-         (setf (gethash ',buf-type *unparamterize-name*) ',buf-code
-               (gethash ',buf-code *paramterize-name*) ',buf-type)
+         (setf (gethash ',queue-type *unparamterize-name*) ',queue-code
+               (gethash ',queue-code *paramterize-name*) ',queue-type)
 
-         (defpolymorph size ((buf ,buf-code)) (values ind &optional)
-           (,(intern (format nil "~s-SIZE" buf-code)) buf))
-         (defpolymorph (setf size) ((new ind) (buf ,buf-code)) ind
-           (setf (,(intern (format nil "~s-SIZE" buf-code)) buf) new))
+         (defpolymorph size ((queue ,queue-code)) (values ind &optional)
+           (,(intern (format nil "~s-SIZE" queue-code)) queue))
+         (defpolymorph (setf size) ((new ind) (queue ,queue-code)) ind
+           (setf (,(intern (format nil "~s-SIZE" queue-code)) queue) new))
 
-         (defpolymorph data ((buf ,buf-code)) (values (simple-array ,type (cl:*)) &optional)
-           (,(intern (format nil "~s-DATA" buf-code)) buf))
+         (defpolymorph data ((queue ,queue-code)) (values (simple-array ,type (cl:*)) &optional)
+           (,(intern (format nil "~s-DATA" queue-code)) queue))
          (defpolymorph (setf data) ((new (simple-array ,type (cl:*)))
-                                    (buf ,buf-code))
+                                    (queue ,queue-code))
              (values (simple-array ,type (cl:*)) &optional)
-           (setf (,(intern (format nil "~s-DATA" buf-code)) buf) new))
+           (setf (,(intern (format nil "~s-DATA" queue-code)) queue) new))
 
          ;; children of x exist at 2*x and 2*x+1, parent is at x/2 truncated
          ;;       [1]
          ;;    [2]   [3]
          ;; [4] [5] [6] [7]
-         (defpolymorph sift-up ((queue ,buf-code) (last ind)) null
+         ;;
+         ;; note that the initial size is 1 (counting the sentinel), so that with
+         ;; capacity 2, we never try to shrink and expanding works simply by x2
+         (defpolymorph sift-up ((queue ,queue-code) (last ind)) null
            (or (= last 1)
                (loop :with data = (data queue)
                      :for i = last :then parent
@@ -45,14 +48,14 @@
                            (loop-finish))))
            (values))
 
-         (defpolymorph sift-down ((queue ,buf-code)) null
+         (defpolymorph sift-down ((queue ,queue-code)) null
            "sifts root to bottom"
            (loop :with data = (data queue)
                  :with i = 1
                  :for root-data = (aref data i)
                  :for left-child :of-type ind = (* i 2)
                  :for right-child :of-type ind = (1+ (* i 2))
-                 :do (when (>= right-child (size queue))
+                 :do (when (>= right-child (size queue)) ; last elt lies at data[size-1]
                        (loop-finish))
                      (let* ((left-large (polymorph.maths:< (aref data right-child)
                                                            (aref data left-child)))
@@ -66,10 +69,10 @@
                              (rotatef (aref data i) (aref data greater-child))
                              (setf i greater-child))))))
 
-         (defpolymorph front ((queue ,buf-code)) ,type
+         (defpolymorph front ((queue ,queue-code)) ,type
            (aref (data queue) 1))
 
-         (defpolymorph push-back ((item ,type) (queue ,buf-code)) ,type
+         (defpolymorph push-back ((item ,type) (queue ,queue-code)) ,type
            (let ((capacity (array-total-size (data queue)))
                  (size (size queue)))
              (when (= size capacity)
@@ -82,7 +85,7 @@
              (setf (size queue) (the ind (1+ (size queue))))
              item))
 
-         (defpolymorph pop-front ((queue ,buf-code)) ,type
+         (defpolymorph pop-front ((queue ,queue-code)) ,type
            (let ((capacity (array-total-size (data queue)))
                  (size (size queue)))
              (when (= size 1)
@@ -97,7 +100,7 @@
                (sift-down queue)
                (setf (size queue) (the ind (1- (size queue)))))))
 
-         (defpolymorph check ((queue ,buf-code)) null
+         (defpolymorph check ((queue ,queue-code)) null
            (labels ((rec (a n i)
                       (let ((elt (aref a i))
                             (left (* i 2))
@@ -133,20 +136,19 @@
 
 
 (define-compiler-macro priority-queue (type &optional initial)
-  (when initial
-    (error "INITIAL will be implemented with heap ops"))
-
   (let ((type (eval type))
         (l (gensym "L"))
         (init (gensym "INIT")))
-    (unless (gethash (cons 'priority-queue (if (listp type) type (list type))) *unparamterize-name*)
+    (unless (gethash (cons 'priority-queue (if (listp type) type (list type)))
+                     *unparamterize-name*)
       (ensure-priority-queue type))
     `(let* ((,init ,initial)
             (,l (length ,init))
             (queue
-              (,(intern (format nil "MAKE-~s"
-                                (gethash (cons 'priority-queue (if (listp type) type (list type)))
-                                         *unparamterize-name*)))
+              (,(intern
+                 (format nil "MAKE-~s"
+                         (gethash (cons 'priority-queue (if (listp type) type (list type)))
+                                  *unparamterize-name*)))
 
                :size (1+ ,l)
                :data (make-array (max 2 ,l) :element-type ',type))))
@@ -155,7 +157,7 @@
              :do (push-back item queue))
        queue)))
 
-(defun adhoc-test ()
+(defun priority-queue-adhoc-test ()
   (declare (optimize debug safety))
   (let ((b (priority-queue 'fixnum)))
     (loop repeat 10

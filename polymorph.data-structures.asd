@@ -13,6 +13,6 @@
                    (:file "polymorphs")
                    (:file "double-linked-list")
                    (:file "ring-buffer")
-                   (:file "priority-queue")))))
-                  ;(:file "red-black-tree")
+                   (:file "priority-queue")
+                   (:file "red-black-tree")))))
                   ;(:file "avl-tree")))

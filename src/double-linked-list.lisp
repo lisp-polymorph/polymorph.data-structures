@@ -151,12 +151,13 @@
   (let ((type (eval type))
         (res (gensym "RES"))
         (anchor (gensym "ANCHOR")))
-    (unless (gethash (cons 'dl-list (if (listp type) type (list type))) *unparamterize-name*)
+    (unless (gethash (cons 'dl-list (if (listp type) type (list type)))
+                     *unparamterize-name*)
       (ensure-dl-list type))
     `(let* ((,res (,(intern
-                     (format nil "MAKE-~s" (gethash (cons 'dl-list
-                                                          (if (listp type) type (list type)))
-                                                    *unparamterize-name*)))))
+                     (format nil "MAKE-~s"
+                             (gethash (cons 'dl-list (if (listp type) type (list type)))
+                                      *unparamterize-name*)))))
             (,anchor (anchor ,res)))
        (setf (prev ,anchor) ,anchor
              (next ,anchor) ,anchor)

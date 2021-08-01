@@ -230,11 +230,14 @@
 
 
 (defun ring-buffer (type &optional initial)
-  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)
+  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                   *unparamterize-name*)
     (ensure-ring-buffer type))
   (let ((l (length initial)))
-    (funcall (intern (format nil "MAKE-~s"
-                             (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)))
+    (funcall (intern
+              (format nil "MAKE-~s"
+                      (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                               *unparamterize-name*)))
 
              :size l
              :data (make-array l :element-type type
@@ -245,18 +248,20 @@
   (let ((type (eval type))
         (l (gensym "L"))
         (init (gensym "INIT")))
-    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)
+    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                     *unparamterize-name*)
       (ensure-ring-buffer type))
     `(let* ((,init ,initial)
             (,l (length ,init)))
        (,(intern (format nil "MAKE-~s"
-                         (gethash (cons 'ring-buffer (if (listp type) type (list type))) *unparamterize-name*)))
+                         (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                                  *unparamterize-name*)))
 
         :size ,l
         :data (make-array ,l :element-type ',type
                              :initial-contents ,init)))))
 
-(defun adhoc-test ()
+(defun ring-buffer-adhoc-test ()
   (let ((b (ring-buffer 'fixnum)))
     (push-front 1 b)
     (push-front 2 b)
