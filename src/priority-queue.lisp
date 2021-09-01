@@ -82,16 +82,18 @@
            (let ((capacity (array-total-size (data queue)))
                  (size (size queue)))
              (when (= size 1)
-               (error "queue is empty!"))
-             (when (< size (truncate capacity 2))
-               (setf (data queue)
-                     (the (simple-array ,type (cl:*))
-                          (adjust-array (data queue) (truncate capacity 2)))))
+               (error "priority queue is empty!"))
              ;; replace root with last, least with largest fixnum, move down
              (prog1
-                 (shiftf (aref (data queue) 1)   (aref (data queue) (1- size)))
+                 (shiftf (aref (data queue) 1) (aref (data queue) (1- size)))
                (sift-down queue)
-               (setf (size queue) (the ind (1- (size queue)))))))
+               (setf (size queue) (decf size))
+               ;; at least n/6 elements are shifted before we shrink and copy O(n) elts
+               ;; n/2 would cause catastrophic copying with fluctuating push/pops
+               (when (<= size (truncate capacity 3))
+                 (setf (data queue)
+                       (the (simple-array ,type (cl:*))
+                            (adjust-array (data queue) (* size 2))))))))
 
          (defpolymorph check ((queue ,queue-code)) null
            (labels ((rec (a n i)
