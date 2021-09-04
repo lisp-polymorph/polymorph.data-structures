@@ -1,5 +1,6 @@
 ;;;;
 ;;;; red-black tree, implemented with the help and entertainment of MIT's introduction to algorithms
+;;;; TODO this should expose a map/set interface
 ;;;;
 
 (in-package #:polymorph.data-structures)

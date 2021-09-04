@@ -23,6 +23,9 @@
          (defpolymorph (setf size) ((new ind) (queue ,queue-code)) ind
            (setf (,(intern (format nil "~s-SIZE" queue-code)) queue) new))
 
+         (defpolymorph empty-p ((queue ,queue-code)) (values ind &optional)
+           (= 1 (,(intern (format nil "~s-SIZE" queue-code)) queue)))
+
          (defpolymorph data ((queue ,queue-code)) (values (simple-array ,type (cl:*)) &optional)
            (,(intern (format nil "~s-DATA" queue-code)) queue))
          (defpolymorph (setf data) ((new (simple-array ,type (cl:*)))
@@ -63,7 +66,14 @@
                            (loop-finish)))))
 
          (defpolymorph front ((queue ,queue-code)) ,type
-           (aref (data queue) 1))
+           (if (empty-p queue)
+               (error "priority queue is empty!")
+               (aref (data queue) 1)))
+
+         (defpolymorph back ((queue ,queue-code)) ,type
+           (if (empty-p queue)
+               (error "priority queue is empty!")
+               (aref (data queue) (1- (size queue)))))
 
          (defpolymorph push-back ((item ,type) (queue ,queue-code)) ,type
            (let ((capacity (array-total-size (data queue)))
