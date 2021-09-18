@@ -1,8 +1,11 @@
 
 (in-package #:polymorph.data-structures)
 
-(defun ensure-dl-list (type &optional (default (default type)))
-  (eval `(define-double-linked-list ,type ,default)))
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defun ensure-dl-list (type &optional (default (default type)))
+    (eval `(define-double-linked-list ,type ,default))))
 
 (defmacro define-double-linked-list (type &optional (default (default type)))
   (unless (gethash (cons 'dl-list (if (listp type) type (list type))) *unparamterize-name*)

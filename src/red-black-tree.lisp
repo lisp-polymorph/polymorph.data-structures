@@ -313,8 +313,13 @@
                (tree-to-list (left root) tree)
                (tree-to-list (right root) tree)))))
 
-(defun ensure-rb-tree (type &optional (default (default type)))
-  (eval `(define-rb-tree ,type ,default)))
+
+
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defun ensure-rb-tree (type &optional (default (default type)))
+    (eval `(define-rb-tree ,type ,default))))
 
 (defun rb-tree (type &optional initial)
   (unless (gethash (cons 'rb-tree (if (listp type) type (list type)))

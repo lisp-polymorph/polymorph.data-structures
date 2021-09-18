@@ -223,9 +223,11 @@
                                :format-arguments (list (first indexes) size size)))
                      (set-at))))))))))
 
-
-(defun ensure-ring-buffer (type &optional (default (default type)))
-  (eval `(define-ring-buffer ,type ,default)))
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+ (defun ensure-ring-buffer (type &optional (default (default type)))
+   (eval `(define-ring-buffer ,type ,default))))
 
 
 
