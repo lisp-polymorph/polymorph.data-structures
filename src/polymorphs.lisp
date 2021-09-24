@@ -45,11 +45,11 @@ signalled if the container is empty.")
 ;;; tree API
 
 (define-polymorphic-function prev (node) :overwrite t
-  :documentation "Returns the predecessor of NODE.")
+  :documentation "Returns the predecessor of NODE (may be NIL).")
 (define-polymorphic-function (setf prev) (new node) :overwrite t)
 
 (define-polymorphic-function next (node) :overwrite t
-  :documentation "Returns the successor of NODE.")
+  :documentation "Returns the successor of NODE (may be NIL).")
 (define-polymorphic-function (setf next) (new node) :overwrite t)
 
 (define-polymorphic-function data (node) :overwrite t

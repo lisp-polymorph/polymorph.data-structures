@@ -23,7 +23,7 @@
          (defpolymorph (setf size) ((new ind) (queue ,queue-code)) ind
            (setf (,(intern (format nil "~s-SIZE" queue-code)) queue) new))
 
-         (defpolymorph empty-p ((queue ,queue-code)) (values ind &optional)
+         (defpolymorph empty-p ((queue ,queue-code)) (values boolean &optional)
            (= 1 (,(intern (format nil "~s-SIZE" queue-code)) queue)))
 
          (defpolymorph data ((queue ,queue-code)) (values (simple-array ,type (cl:*)) &optional)

@@ -162,6 +162,36 @@
                                    (setf (color p) :black (color pp) :red))))))
                  :finally (setf (color (root tree)) :black)))
 
+         (defpolymorph next ((node ,tree-code)) (or ,tree-code null)
+           (flet ((sentinelp (node)
+                    (eq node (left node))))
+             (declare (dynamic-extent #'sentinelp))
+             (if (sentinelp (right node))
+                 (loop :with x = node
+                       :for parent = (parent x)
+                       :until (or (null parent) (left-child-p x))
+                       :do (setf x parent)
+                       :finally (return (parent x))) ; may return NULL
+                 (loop :with x = (right node)
+                       :until (sentinelp (left node))
+                       :do (setf x (left x))
+                       :finally (return x)))))
+
+         (defpolymorph prev ((node ,tree-code)) (or ,tree-code null)
+           (flet ((sentinelp (node)
+                    (eq node (left node))))
+             (declare (dynamic-extent #'sentinelp))
+             (if (sentinelp (left node))
+                 (loop :with x = node
+                       :for parent = (parent x)
+                       :until (or (null parent) (not (left-child-p x)))
+                       :do (setf x parent)
+                       :finally (return (parent x))) ; may return NULL
+                 (loop :with x = (left node)
+                       :until (sentinelp (right node))
+                       :do (setf x (right x))
+                       :finally (return x)))))
+
          (defpolymorph find ((tree ,tree-code) (item ,type)) (values ,tree-node boolean)
            (loop :with parent = (sentinel tree)
                  :with x = (root tree)
@@ -298,10 +328,13 @@
                                         l)
                                        (t nil)))))))
              (declare (dynamic-extent #'recur))
-             (let ((root (root tree)))
-               (and (eq (color root) :black)
-                    (node-null (parent root) tree)
-                    (assert (recur root))))))
+             (let ((root (root tree))
+                   (sentinel (sentinel tree)))
+               (assert (and (eq (color root) :black)
+                            (node-null (parent root) tree)
+                            (eq (color sentinel) :black)
+                            (eq sentinel (left sentinel))
+                            (recur root))))))
 
          (values)))))
 
@@ -332,10 +365,10 @@
                                          *unparamterize-name*)))))
              (setf (color %node) :black
                    ;; these can stay uninitialized
-                   ;; (left %node) %node
-                   ;; (right %node) %node
-                   (parent %node) %node
-                   (key %node) (default type))
+                   ;;(right %node) %node
+                   ;;(parent %node) %node
+                   ;;(key %node) (default type)
+                   (left %node) %node)
              %node))
          (tree
            (funcall (intern
@@ -363,8 +396,7 @@
                         ',(gethash (cons 'rb-node (if (listp type) type (list type)))
                                    *unparamterize-name*)))))
                 (setf (color %node) :black
-                      (parent %node) %node
-                      (key %node) (default ',type))
+                      (left %node) %node)
                 %node))
             (tree
               (,(intern
@@ -398,5 +430,5 @@
                    while (plusp (size tree))
                    do (if (zerop (random 4))
                           (push (insert tree (random 1000)) inserted)
-                          (erase tree (find tree (pop inserted))))
+                          (erase tree (find tree (key (pop inserted)))))
                       (check tree)))))
