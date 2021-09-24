@@ -118,8 +118,11 @@
              (assert (rec (data queue) (size queue) 1))))
          (values)))))
 
-(defun ensure-priority-queue (type &optional (default (default type)))
-  (eval `(define-priority-queue ,type ,default)))
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defun ensure-priority-queue (type &optional (default (default type)))
+    (eval `(define-priority-queue ,type ,default))))
 
 (defun priority-queue (type &optional initial)
   (unless (gethash (cons 'priority-queue (if (listp type) type (list type)))
