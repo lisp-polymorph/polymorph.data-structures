@@ -1,6 +1,5 @@
 ;;;;
-;;;; red-black tree, implemented with the help and entertainment of MIT's introduction to algorithms
-;;;; TODO this should expose a map/set interface
+;;;; red-black tree, implemented with the help and entertainment of MIT's CLRS
 ;;;;
 
 (in-package #:polymorph.data-structures)
@@ -20,7 +19,7 @@
            (left (error "no left node") :type ,tree-node)
            (right (error "no right node") :type ,tree-node)
            (parent (error "no parent node") :type ,tree-node)
-           (key ,default :type ,type)
+           (key ,default :type ,type) ; the key may store a key/value tuple, saving space here
            (color :red :type (member :red :black)))
 
          (defstruct ,tree-code
