@@ -23,6 +23,9 @@
          (defpolymorph (setf size) ((new ind) (queue ,queue-code)) ind
            (setf (,(intern (format nil "~s-SIZE" queue-code)) queue) new))
 
+         (defpolymorph empty-p ((queue ,queue-code)) (values boolean &optional)
+           (= 1 (,(intern (format nil "~s-SIZE" queue-code)) queue)))
+
          (defpolymorph data ((queue ,queue-code)) (values (simple-array ,type (cl:*)) &optional)
            (,(intern (format nil "~s-DATA" queue-code)) queue))
          (defpolymorph (setf data) ((new (simple-array ,type (cl:*)))
@@ -37,40 +40,40 @@
          ;;
          ;; note that the initial size is 1 (counting the sentinel), so that with
          ;; capacity 2, we never try to shrink and expanding works simply by x2
-         (defpolymorph sift-up ((queue ,queue-code) (last ind)) null
-           (or (= last 1)
-               (loop :with data = (data queue)
-                     :for i = last :then parent
-                     :for parent = (truncate i 2)
-                     :while (polymorph.maths:< (aref data parent) (aref data i))
-                     :do (rotatef (aref data i) (aref data parent))
-                         (when (= parent 1) ; reached the root
-                           (loop-finish))))
-           (values))
+         (defpolymorph (sift-up :inline t) ((queue ,queue-code) (last ind)) null
+           (loop :with data = (data queue)
+                 :for i = last :then parent
+                 :for parent = (truncate i 2)
+                 :while (and (> parent 0)
+                             (polymorph.maths:> (aref data i) (aref data parent)))
+                 :do (rotatef (aref data i) (aref data parent))))
 
-         (defpolymorph sift-down ((queue ,queue-code)) null
+         (defpolymorph (sift-down :inline t) ((queue ,queue-code)) null
            "sifts root to bottom"
            (loop :with data = (data queue)
                  :with i = 1
-                 :for root-data = (aref data i)
                  :for left-child :of-type ind = (* i 2)
                  :for right-child :of-type ind = (1+ (* i 2))
-                 :do (when (>= right-child (size queue)) ; last elt lies at data[size-1]
-                       (loop-finish))
-                     (let* ((left-large (polymorph.maths:< (aref data right-child)
-                                                           (aref data left-child)))
-                            (greater-child (if left-large left-child right-child))
-                            (greater-data (if left-large
-                                              (aref data left-child)
-                                              (aref data right-child))))
-                       (if (polymorph.maths:< greater-data root-data)
-                           (loop-finish)
+				 :until (>= right-child (size queue)) ; last elt lies at data[size-1]
+                 :do (let ((greater-child (if (polymorph.maths:> (aref data left-child)
+                                                                 (aref data right-child))
+                                              left-child
+                                              right-child)))
+                       (if (polymorph.maths:> (aref data greater-child) (aref data i))
                            (progn
                              (rotatef (aref data i) (aref data greater-child))
-                             (setf i greater-child))))))
+                             (setf i greater-child))
+                           (loop-finish)))))
 
          (defpolymorph front ((queue ,queue-code)) ,type
-           (aref (data queue) 1))
+           (if (empty-p queue)
+               (error "priority queue is empty!")
+               (aref (data queue) 1)))
+
+         (defpolymorph back ((queue ,queue-code)) ,type
+           (if (empty-p queue)
+               (error "priority queue is empty!")
+               (aref (data queue) (1- (size queue)))))
 
          (defpolymorph push-back ((item ,type) (queue ,queue-code)) ,type
            (let ((capacity (array-total-size (data queue)))
@@ -89,16 +92,18 @@
            (let ((capacity (array-total-size (data queue)))
                  (size (size queue)))
              (when (= size 1)
-               (error "queue is empty!"))
-             (when (< size (truncate capacity 2))
-               (setf (data queue)
-                     (the (simple-array ,type (cl:*))
-                          (adjust-array (data queue) (truncate capacity 2)))))
+               (error "priority queue is empty!"))
              ;; replace root with last, least with largest fixnum, move down
              (prog1
-                 (shiftf (aref (data queue) 1)   (aref (data queue) (1- size)))
+                 (shiftf (aref (data queue) 1) (aref (data queue) (1- size)))
                (sift-down queue)
-               (setf (size queue) (the ind (1- (size queue)))))))
+               (setf (size queue) (decf size))
+               ;; at least n/6 elements are shifted before we shrink and copy O(n) elts
+               ;; n/2 would cause catastrophic copying with fluctuating push/pops
+               (when (<= size (truncate capacity 3))
+                 (setf (data queue)
+                       (the (simple-array ,type (cl:*))
+                            (adjust-array (data queue) (* size 2))))))))
 
          (defpolymorph check ((queue ,queue-code)) null
            (labels ((rec (a n i)
