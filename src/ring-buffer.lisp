@@ -1,6 +1,6 @@
 
 (in-package #:polymorph.data-structures)
-
+#||
 (defmacro define-ring-buffer (type &optional (default (default type))
                                      force-p)
   (unless (and (not force-p)
@@ -40,7 +40,7 @@
            (setf (,(intern (format nil "~s-DATA" buf-code)) buf) new))
 
 
-         (defpolymorph (%resize :inline nil) ((buf ,buf-code) (newsize ind)) null
+         (defpolymorph (%resize :inline t) ((buf ,buf-code) (newsize ind)) null
            (let ((newdata (make-array newsize :element-type ',type
                                               :initial-element ,default))
                  (olddata (data buf))
@@ -59,7 +59,7 @@
                               :do (setf (aref newdata (+ i (- newsize (length olddata))))
                                         (aref olddata i)))
                         (setf (begin buf) (the ind
-                                               (- (begin buf)
+                                               (- (begin buf)   ;;FIXME broken
                                                   (- newsize (length olddata)))))))
              (setf (data buf) newdata)
              nil))
@@ -245,7 +245,6 @@
              :data (make-array l :element-type type
                                  :initial-contents initial))))
 
-
 (define-compiler-macro ring-buffer (type &optional initial)
   (let ((type (eval type))
         (l (gensym "L"))
@@ -262,7 +261,125 @@
         :size ,l
         :data (make-array ,l :element-type ',type
                              :initial-contents ,init)))))
+||#
 
+(defmacro def (type name inheritance &body slots) ;; This actually comes from polymorph.macros
+                                                  ;; and should be there. I put it here just to
+  (ecase type                                     ;; illustrate what's happening.
+    (:struct
+     (let ((typed-slots
+             (loop :for slot :in slots
+                   :collect (if (listp slot)
+                                (destructuring-bind
+                                    (sname &optional (stype t) (sform (default stype))) slot
+                                  `(,sname ,stype ,sform))
+                                `(,slot t t)))))
+       `(progn
+          ,(if inheritance
+               `(defstruct (,name (:include ,@inheritance))
+                  ,@(loop :for (sname stype sform) :in typed-slots
+                          :collect `(,sname ,sform
+                                            :type ,stype)))
+
+               `(defstruct ,name
+                  ,@(loop :for (sname stype sform) :in typed-slots
+                          :collect `(,sname ,sform
+                                            :type ,stype))))
+          ,@(loop :for (sname stype _) :in typed-slots
+                  :unless (fboundp sname)
+                    :collect `(define-polymorphic-function ,sname (object) :overwrite t)
+                  :collect `(defpolymorph (,sname :inline t) ((,name ,name)) (values ,stype &optional)
+                              (,(intern (format nil "~s-~s" name sname))
+                               ,name))
+                  :unless (fboundp `(setf ,sname))
+                    :collect `(define-polymorphic-function (setf ,sname) (new object) :overwrite t)
+                  :collect `(defpolymorph ((setf ,sname) :inline t) ((new ,stype) (,name ,name)) (values ,stype &optional)
+                              (setf (,(intern (format nil "~s-~s" name sname))
+                                     ,name)
+                                    new)))
+          ',name)))))
+
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defclass c-ring-buffer (ctype::ctype)  ;; ctype for ring-buffer
+    ((%simplicity :initarg :simplicity ;; unused as of yet
+                  :reader c-rb-simplicity
+                  :type (member :simple :complex))
+     (%elem-type :initarg :element-type
+                 :reader c-rb-element-type)
+     (%size :initarg :size  ;; also unused but will be used when we get to fixed size rb
+            :reader c-rb-size
+            :type ind))))
+
+
+(defmacro define-ring-buffer (type &optional (default (default type))
+                                     force-p)
+  (unless (and (not force-p)
+               (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                        *unparamterize-name*))
+
+    (let* ((buf-type (cons 'ring-buffer (if (listp type) type (list type))))
+           (buf-code (gentemp "RING-BUFFER")))
+      `(eval-when (:compile-toplevel :load-toplevel :execute)
+         (def :struct ,buf-code ()
+           (begin ind)
+           (end ind)
+           (size ind)
+           (data (simple-array ,type (cl:*))
+                 (make-array 0 :element-type ',type :initial-element ,default)))
+
+         (setf (gethash ',buf-type *unparamterize-name*) ',buf-code
+               (gethash ',buf-code *paramterize-name*) ',buf-type
+
+               (gethash ',buf-code *corresponding-ctype*)      ;; we create here a corresponding
+               (make-instance 'c-ring-buffer :element-type ',type))  ;; ctype
+
+         (deftype ring-buffer (&optional typename)
+          (if (eq typename 'cl:*)          ;; by default, a ring-buffer type is just (or ,@all-the-other-rbs)
+              `(or ,@',(cons buf-code
+                        (loop :for k :being :the :hash-keys :in *unparamterize-name*
+                               :using (hash-value v)
+                             :when (eql (first k) 'ring-buffer)
+                               :collect v)))
+              (progn
+                (unless (gethash (cons 'ring-buffer (if (listp typename) typename (list typename)))
+                                *unparamterize-name*)
+                 (ensure-ring-buffer typename))
+               (gethash (cons 'ring-buffer
+                              (if (listp typename) typename (list typename)))
+                        *unparamterize-name*))))))))
+
+
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (define-ring-buffer t)
+
+  (defun ensure-ring-buffer (type &optional (default (default type)))
+    (eval `(define-ring-buffer ,type ,default))))
+
+
+
+
+(defpolymorph (front :inline t) ((buf ring-buffer)) t  ;; now we can use ring-buffer as "general"
+  (if (= 0 (size buf))                                 ;; type for all ring-buffers
+      (error "Front requires a non-empty biffer")
+      (aref (data buf) (begin buf))))
+
+(defpolymorph-compiler-macro front (ring-buffer) (buf &environment env) ;; and here we handle the specific
+                                                                        ;; types using corresp ctype we saved
+  (let* ((type (%form-type buf env))
+         (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+         (bufname (gensym "BUF")))
+    `(let ((,bufname ,buf))
+       (declare (type ,type ,bufname))
+       (if (= 0 (size ,bufname))
+           (error "Front requires a non-empty biffer")
+           (the ,elem-type (aref (data ,bufname) (begin ,bufname)))))))
+
+
+#||
 (defun ring-buffer-adhoc-test ()
   (let ((b (ring-buffer 'fixnum)))
     (push-front 1 b)
@@ -277,3 +394,4 @@
                  (= (at b 1) 2)
                  (= (at b 2) 1)
                  (= (at b 3) 99)))))
+||#
