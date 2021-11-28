@@ -35,7 +35,7 @@
            (setf (,(intern (format nil "~s-DATA" buf-code)) buf) new))
 
 
-         (defpolymorph (%resize :inline nil) ((buf ,buf-code) (newsize ind)) null
+         (defpolymorph (%resize :inline t) ((buf ,buf-code) (newsize ind)) null
            (let ((newdata (make-array newsize :element-type ',type
                                               :initial-element ,default))
                  (olddata (data buf))
@@ -215,7 +215,6 @@
              :size l
              :data (make-array l :element-type type
                                  :initial-contents initial))))
-
 
 (define-compiler-macro ring-buffer (type &optional initial)
   (let ((type (eval type))

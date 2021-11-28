@@ -1,9 +1,11 @@
 (in-package #:polymorph.data-structures)
 
-(defparameter *paramterize-name* (make-hash-table :test #'equalp))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *paramterize-name* (make-hash-table :test #'equalp))
 
-(defparameter *unparamterize-name* (make-hash-table :test #'equalp))
+  (defparameter *unparamterize-name* (make-hash-table :test #'equalp))
 
+  (defparameter *corresponding-ctype* (make-hash-table :test #'equalp)))
 ;;(define-polymorphic-function anchor (container) :overwrite t)
 
 (define-polymorphic-function size (container) :overwrite t
