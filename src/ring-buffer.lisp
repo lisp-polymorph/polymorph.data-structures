@@ -1,257 +1,525 @@
 
 (in-package #:polymorph.data-structures)
 
+
+(defmacro def (type name inheritance &body slots) ;; This actually comes from polymorph.macros
+                                                  ;; and should be there. I put it here just to
+  (ecase type                                     ;; illustrate what's happening.
+    (:struct
+     (let ((typed-slots
+             (loop :for slot :in slots
+                   :collect (if (listp slot)
+                                (destructuring-bind
+                                    (sname &optional (stype t) (sform (default stype))) slot
+                                  `(,sname ,stype ,sform))
+                                `(,slot t t)))))
+       `(progn
+          ,(if inheritance
+               `(defstruct (,name (:include ,@inheritance))
+                  ,@(loop :for (sname stype sform) :in typed-slots
+                          :collect `(,sname ,sform
+                                            :type ,stype)))
+
+               `(defstruct ,name
+                  ,@(loop :for (sname stype sform) :in typed-slots
+                          :collect `(,sname ,sform
+                                            :type ,stype))))
+          ,@(loop :for (sname stype _) :in typed-slots
+                  :unless (fboundp sname)
+                    :collect `(define-polymorphic-function ,sname (object) :overwrite t)
+                  :collect `(defpolymorph (,sname :inline t) ((,name rb)) (values ,stype &optional)
+                              (,(intern (format nil "~s-~s" name sname))
+                               ,name))
+                  :unless (fboundp `(setf ,sname))
+                    :collect `(define-polymorphic-function (setf ,sname) (new object) :overwrite t)
+                  :collect `(defpolymorph ((setf ,sname) :inline t) ((new ,stype) (,name rb)) (values ,stype &optional)
+                              (setf (,(intern (format nil "~s-~s" name sname))
+                                     ,name)
+                                    new)))
+          ',name)))))
+
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defclass c-ring-buffer (ctype::ctype)  ;; ctype for ring-buffer
+    ((%simplicity :initarg :simplicity ;; unused as of yet
+                  :reader c-rb-simplicity
+                  :type (member :simple :complex))
+     (%elem-type :initarg :element-type
+                 :reader c-rb-element-type)
+     (%size :initarg :size  ;; also unused but will be used when we get to fixed size rb
+            :reader c-rb-size
+            :type ind)))
+
+  (def :struct rb ()
+    (begin ind)
+    (end ind)
+    (size ind)
+    (data (simple-array t (cl:*))
+          (make-array 0))))
+
 (defmacro define-ring-buffer (type &optional (default (default type))
                                      force-p)
   (unless (and (not force-p)
                (gethash (cons 'ring-buffer (if (listp type) type (list type)))
                         *unparamterize-name*))
+
     (let* ((buf-type (cons 'ring-buffer (if (listp type) type (list type))))
            (buf-code (gentemp "RING-BUFFER")))
-
       `(eval-when (:compile-toplevel :load-toplevel :execute)
-         (defstruct ,buf-code
-           (begin 0 :type ind) ; index [0, size-1]
-           (size 0 :type ind)
-           (data (make-array 0 :element-type ',type :initial-element ,default)
-            :type (simple-array ,type (cl:*))))
+         (defstruct (,buf-code (:include rb)))
 
          (setf (gethash ',buf-type *unparamterize-name*) ',buf-code
-               (gethash ',buf-code *paramterize-name*) ',buf-type)
+               (gethash ',buf-code *paramterize-name*) ',buf-type
 
-         (defpolymorph begin ((buf ,buf-code)) (values ind &optional)
-           (,(intern (format nil "~s-BEGIN" buf-code)) buf))
-         (defpolymorph (setf begin) ((new ind) (buf ,buf-code)) ind
-           (setf (,(intern (format nil "~s-BEGIN" buf-code)) buf) new))
-         (defpolymorph size ((buf ,buf-code)) (values ind &optional)
-           (,(intern (format nil "~s-SIZE" buf-code)) buf))
-         (defpolymorph (setf size) ((new ind) (buf ,buf-code)) ind
-           (setf (,(intern (format nil "~s-SIZE" buf-code)) buf) new))
-         (defpolymorph data ((buf ,buf-code)) (values (simple-array ,type (cl:*)) &optional)
-           (,(intern (format nil "~s-DATA" buf-code)) buf))
-         (defpolymorph (setf data) ((new (simple-array ,type (cl:*)))
-                                    (buf ,buf-code))
-             (values (simple-array ,type (cl:*)) &optional)
-           (setf (,(intern (format nil "~s-DATA" buf-code)) buf) new))
+               (gethash ',buf-code *corresponding-ctype*)      ;; we create here a corresponding
+               (make-instance 'c-ring-buffer :element-type ',type))  ;; ctype
 
+         (deftype ring-buffer (&optional typename)
+           (if (eq typename 'cl:*)          ;; by default, a ring-buffer type is just (or ,@all-the-other-rbs)
+               `rb
+               (progn
+                 (unless (gethash (cons 'ring-buffer (if (listp typename) typename (list typename)))
+                                 *unparamterize-name*)
+                  (ensure-ring-buffer typename))
+                (gethash (cons 'ring-buffer
+                               (if (listp typename) typename (list typename)))
+                         *unparamterize-name*))))))))
 
-         (defpolymorph (%resize :inline t) ((buf ,buf-code) (newsize ind)) null
-           (let ((newdata (make-array newsize :element-type ',type
-                                              :initial-element ,default))
-                 (olddata (data buf))
-                 (begin (begin buf)))
-             (if (= (length olddata) 0)
-                 (setf (data buf) newdata)
-                 (loop :for i :below (size buf)
-                       :do (setf (aref newdata i)
-                                 (aref olddata (mod (+ begin i) (length olddata))))
-                       :finally (setf (begin buf) 0
-                                      (data buf) newdata)))))
-
-
-         (defpolymorph back ((buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "BACK requires a non-empty buffer")
-               (aref (data buf) (mod (1- (+ (begin buf) (size buf)))
-                                     (length (data buf))))))
-
-         (defpolymorph (setf back) ((new ,type) (buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "BACK requires a non-empty buffer")
-               (setf (aref (data buf) (mod (1- (+ (begin buf) (size buf)))
-                                           (length (data buf))))
-                     new)))
-
-         (defpolymorph push-back ((new ,type) (buf ,buf-code)) ,type
-           (when (= (length (data buf)) (size buf))
-             (%resize buf (the ind (* 2 (+ 1 (length (data buf)))))))
-           (setf (aref (data buf) (mod (+ (begin buf) (size buf))
-                                       (length (data buf))))
-                 new)
-           (setf (size buf) (the ind (1+ (size buf))))
-           new)
-
-         (defpolymorph pop-back ((buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "POP-BACK requires a non-empty buffer")
-               (prog1
-                   (front buf)
-                 (when (> (length (data buf)) (* 3 (size buf)))
-                   (%resize buf (size buf)))
-                 (setf (size buf) (the ind (1- (size buf)))))))
-
-
-         (defpolymorph front ((buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "FRONT requires a non-empty buffer")
-               (aref (data buf) (begin buf))))
-
-         (defpolymorph (setf front) ((new ,type) (buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "FRONT requires a non-empty buffer")
-               (setf (aref (data buf) (begin buf))
-                     new)))
-
-         (defpolymorph push-front ((new ,type) (buf ,buf-code)) ,type
-           (when (= (length (data buf)) (size buf))
-             (%resize buf (* 2 (+ 1 (length (data buf))))))
-           (setf (begin buf) (mod (1- (begin buf))
-                                  (length (data buf)))
-                 (aref (data buf) (begin buf)) new
-                 (size buf) (the ind (1+ (size buf))))
-           new)
-
-
-         (defpolymorph pop-front ((buf ,buf-code)) ,type
-           (if (= 0 (size buf))
-               (error "POP-FRONT requires a non-empty buffer")
-               (prog1
-                   (back buf)
-                 (when (> (length (data buf)) (* 3 (size buf)))
-                   (%resize buf (size buf)))
-                 (setf (size buf) (the ind (1- (size buf)))
-                       (begin buf) (mod (1+ (begin buf))
-                                        (length (data buf)))))))
-
-         (defpolymorph empty-p ((buf ,buf-code)) boolean
-           (= 0 (size buf)))
-
-         (defpolymorph (at :inline t) ((buf ,buf-code) &rest indexes)
-             (values (or null ,type) &optional boolean)
-           (let* ((error-policy (member :error indexes))
-                  (begin (begin buf))
-                  (size (size buf))
-                  (data (data buf))
-                  (indexes (if error-policy
-                               (nbutlast (nbutlast indexes))
-                               indexes))
-                  (ind (first indexes)))
-             (flet ((%at ()
-                      (aref data (mod (+ begin ind) (length data)))))
-               (declare (inline %at))
-               (if error-policy
-
-                   (if (second error-policy)
-                       (progn
-                         (unless (= 1 (length indexes))
-                           (error 'simple-error :format-control "Only one index is allowed for ring-buffer")) ;; FIXME later make this better
-                         (unless (< ind size)
-                           (error 'simple-error
-                                   :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                                   :format-arguments (list ind size size)))
-                         (%at))
-                       (if (and (= 1 (length indexes)) (< (+ begin ind) size))
-                           (values (%at) t)
-                           (values nil nil)))
-
-                   (progn
-                     (unless (= 1 (length indexes))
-                       (error 'simple-error :format-control "Only one index is allowed for ring-buffer")) ;; FIXME later make this better
-                     (unless (< (first indexes) size)
-                       (error 'simple-error
-                               :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                               :format-arguments (list (first indexes) size size)))
-                     (%at))))))
-
-
-
-
-         (defpolymorph ((setf at) :inline t) ((new ,type) (buf ,buf-code) &rest indexes)
-             (values (or null ,type) &optional boolean)
-           (let* ((error-policy (member :error indexes))
-                  (begin (begin buf))
-                  (size (size buf))
-                  (data (data buf))
-                  (indexes (if error-policy
-                               (nbutlast (nbutlast indexes))
-                               indexes))
-                  (ind (first indexes)))
-             (flet ((set-at ()
-                      (setf (aref data (mod (+ begin ind) (length data)))
-                            new)))
-               (declare (inline set-at))
-               (if error-policy
-
-                   (if (second error-policy)
-                       (progn
-                         (unless (= 1 (length indexes))
-                           (error 'simple-error :format-control "Only one index is allowed for ring-buffer")) ;; FIXME later make this better
-                         (unless (< ind size)
-                           (error 'simple-error
-                                   :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                                   :format-arguments (list ind size size)))
-                         (set-at))
-                       (if (and (= 1 (length indexes)) (< (+ begin ind) size))
-                           (values (set-at) t)
-                           (values nil nil)))
-
-                   (progn
-                     (unless (= 1 (length indexes))
-                       (error 'simple-error :format-control "Only one index is allowed for ring-buffer")) ;; FIXME later make this better
-                     (unless (< (first indexes) size)
-                       (error 'simple-error
-                               :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                               :format-arguments (list (first indexes) size size)))
-                     (set-at))))))))))
 
 (eval-when (:compile-toplevel
             :load-toplevel
             :execute)
- (defun ensure-ring-buffer (type &optional (default (default type)))
-   (eval `(define-ring-buffer ,type ,default))))
+  (define-ring-buffer t)
+
+  (defun ensure-ring-buffer (type &optional (default (default type)))
+    (eval `(define-ring-buffer ,type ,default)))
+
+  (defun ring-buffer (type &optional initial)
+   (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                    *unparamterize-name*)
+     (ensure-ring-buffer type))
+   (let ((l (length initial)))
+     (funcall (intern
+               (format nil "MAKE-~s"
+                       (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                                *unparamterize-name*)))
+
+              :size l
+              :data (make-array l :element-type t
+                                  :initial-contents initial))))
+
+ (define-compiler-macro ring-buffer (type &optional initial)
+   (let ((type (eval type))
+         (l (gensym "L"))
+         (init (gensym "INIT")))
+     (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                      *unparamterize-name*)
+       (ensure-ring-buffer type))
+     `(let* ((,init ,initial)
+             (,l (length ,init)))
+        (,(intern (format nil "MAKE-~s"
+                          (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                                   *unparamterize-name*)))
+
+         :size ,l
+         :data (make-array ,l :element-type t
+                              :initial-contents ,init))))))
+ 
+
+
+(defpolymorph (%resize :inline t) ((buf ring-buffer) (newsize ind)) null
+  (let ((newdata (make-array newsize :element-type t))
+        (olddata (data buf))
+        (front (begin buf))
+        (back (end buf)))
+    (if (< front back)
+        (progn (loop :for i :from front :below back
+                     :do (setf (aref newdata (- i front)) (aref olddata i)))
+               (setf (begin buf) 0
+                     (end buf) (if (= newsize (- back front))
+                                   0
+                                   (- back front))))
+        (let ((j 0))
+          (loop :for i :from front :below (length olddata)
+                :do (setf (aref newdata j) (aref olddata i))
+                    (incf j))
+          (loop :for i :from 0 :below back
+                :do (setf (aref newdata j) (aref olddata i))
+                    (incf j))
+          (setf (begin buf) 0
+                (end buf) (length olddata))))
+    (setf (data buf) newdata)
+    nil))
+
+
+#||
+(defpolymorph-compiler-macro %resize (ring-buffer ind) (buf newsize &environment env)
+  (let* ((type (%form-type buf env))
+         (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+         (bufname (gensym "BUF"))
+         (sizename (gensym "NEWSIZE")))
+
+    `(let ((,bufname ,buf)
+           (,sizename ,newsize))
+       (let ((newdata (make-array ,sizename :element-type ',elem-type
+                                            :initial-element ,(default elem-type)))
+             (olddata (data ,bufname))
+             (front (begin ,bufname))
+             (back (end ,bufname)))
+         (declare (type (simple-array ,elem-type) newdata))
+         (if (< front back)
+             (progn (loop :for i :from front :below back
+                          :do (setf (aref newdata (- i front)) (aref olddata i)))
+                    (setf (begin ,bufname) 0
+                          (end ,bufname) (if (= ,sizename (- back front))
+                                             0
+                                             (- back front))))
+             (progn (loop :for i :from 0 :below back
+                          :do (setf (aref newdata i) (aref olddata i)))
+                    (loop :for i :from front :below (length olddata)
+                          :do (setf (aref newdata (+ i (- ,sizename (length olddata))))
+                                    (aref olddata i)))
+                    (setf (begin ,bufname) (the ind
+                                                (- (begin ,bufname)
+                                                   (- ,sizename (length olddata)))))))
+         (setf (data ,bufname) newdata))
+      nil)))
+||#
+
+
+(defpolymorph (front :inline t) ((buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Front requires a non-empty biffer")
+      (aref (data buf) (begin buf))))
+
+(defpolymorph-compiler-macro front (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF")))
+          `(let ((,bufname ,buf))
+             (declare (type ,type ,bufname))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty biffer")
+                 (the ,elem-type (aref (data ,bufname) (begin ,bufname)))))))))
+
+
+(defpolymorph (setf front) ((new t) (buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Front requires a non-empty biffer")
+      (setf (aref (data buf) (begin buf)) new)))
+
+(defpolymorph-compiler-macro (setf front) (t ring-buffer) (&whole form new buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((newtype (%form-type new env))
+              (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF"))
+              (newname (gensym "NEW")))
+          (assert (subtypep newtype elem-type env))
+          `(let ((,bufname ,buf)
+                 (,newname ,new))
+             (declare (type ,type ,bufname)
+                      (type ,newtype ,new))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty biffer")
+                 (the ,newtype (setf (aref (data ,bufname) (begin ,bufname))))))))))
 
 
 
-(defun ring-buffer (type &optional initial)
-  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                   *unparamterize-name*)
-    (ensure-ring-buffer type))
-  (let ((l (length initial)))
-    (funcall (intern
-              (format nil "MAKE-~s"
-                      (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                               *unparamterize-name*)))
+(defpolymorph push-front ((new t) (buf ring-buffer)) t
+  (when (= (length (data buf)) (size buf))
+    (%resize buf (the ind (* 2 (+ 1 (length (data buf)))))))
+  (setf (begin buf)
+        (the ind (if (= 0 (begin buf))
+                     (- (length (data buf)) 1)
+                     (- (begin buf) 1))))
+  (setf (aref (data buf) (begin buf)) new)
+  (setf (size buf) (the ind (1+ (size buf))))
+  new)
 
-             :size l
-             :data (make-array l :element-type type
-                                 :initial-contents initial))))
 
-(define-compiler-macro ring-buffer (type &optional initial)
-  (let ((type (eval type))
-        (l (gensym "L"))
-        (init (gensym "INIT")))
-    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                     *unparamterize-name*)
-      (ensure-ring-buffer type))
-    `(let* ((,init ,initial)
-            (,l (length ,init)))
-       (,(intern (format nil "MAKE-~s"
-                         (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                                  *unparamterize-name*)))
+(defpolymorph-compiler-macro push-front (t ring-buffer) (&whole form new buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let* ((newtype (%form-type new env))
+               (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+               (bufname (gensym "BUF"))
+               (newname (gensym "NEW")))
+          (assert (subtypep newtype elem-type env))
+          `(let ((,bufname ,buf)
+                 (,newname ,new))
+             (declare (type ,newtype ,newname))
+             (when (= (length (data ,bufname)) (size ,bufname))
+               (%resize ,bufname (the ind (* 2 (+ 1 (length (data ,bufname)))))))
+             (setf (begin ,bufname)
+                   (the ind (if (= 0 (begin ,bufname))
+                                (- (length (data ,bufname)) 1)
+                                (- (begin ,bufname) 1))))
+             (setf (aref (data ,bufname) (begin ,bufname)) ,newname)
+             (setf (size ,bufname) (the ind (1+ (size ,bufname))))
+             ,newname)))))
 
-        :size ,l
-        :data (make-array ,l :element-type ',type
-                             :initial-contents ,init)))))
+
+
+(defpolymorph pop-front ((buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Front requires a non-empty buffer")
+      (prog1
+          (aref (data buf) (begin buf))
+        (when (> (length (data buf)) (* 3 (size buf)))
+          (%resize buf (size buf)))
+        (setf (begin buf)
+              (the ind (if (= (1- (length (data buf))) (begin buf))
+                           0
+                           (1+ (begin buf)))))
+        (setf (size buf) (the ind (1- (size buf)))))))
+
+
+(defpolymorph-compiler-macro pop-front (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF")))
+          `(let ((,bufname ,buf))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty buffer")
+                 (the ,elem-type (prog1
+                                      (aref (data ,bufname) (begin ,bufname))
+                                    (when (> (length (data ,bufname)) (* 3 (size ,bufname)))
+                                        (%resize ,bufname (size ,bufname)))
+                                    (setf (begin ,bufname)
+                                          (the ind (if (= (1- (length (data ,bufname))) (begin ,bufname))
+                                                       0
+                                                       (1+ (begin ,bufname)))))
+                                    (setf (size ,bufname) (the ind (1- (size ,bufname))))))))))))
+
+
+(defpolymorph (back :inline t) ((buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Front requires a non-empty biffer")
+      (aref (data buf) (end buf))))
+
+(defpolymorph-compiler-macro back (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF")))
+          `(let ((,bufname ,buf))
+             (declare (type ,type ,bufname))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty biffer")
+                 (the ,elem-type (aref (data ,bufname) (end ,bufname)))))))))
+
+
+(defpolymorph (setf back) ((new t) (buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Front requires a non-empty biffer")
+      (setf (aref (data buf) (end buf)) new)))
+
+(defpolymorph-compiler-macro (setf back) (t ring-buffer) (&whole form new buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((newtype (%form-type new env))
+              (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF"))
+              (newname (gensym "NEW")))
+          (assert (subtypep newtype elem-type env))
+          `(let ((,bufname ,buf)
+                 (,newname ,new))
+             (declare (type ,type ,bufname)
+                      (type ,newtype ,new))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty biffer")
+                 (the ,newtype (setf (aref (data ,bufname) (end ,bufname))))))))))
+
+(defpolymorph push-back ((new t) (buf ring-buffer)) t
+  (when (= (length (data buf)) (size buf))
+    (%resize buf (* 2 (+ 1 (length (data buf))))))
+  (setf (aref (data buf) (end buf)) new)
+  (setf (end buf)
+        (the ind (if (= (1- (length (data buf))) (end buf))
+                     0
+                     (1+ (end buf)))))
+  (setf (size buf) (the ind (1+ (size buf))))
+  new)
+
+
+(defpolymorph-compiler-macro push-back (t ring-buffer) (&whole form new buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let* ((newtype (%form-type new env))
+               (elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+               (bufname (gensym "BUF"))
+               (newname (gensym "NEW")))
+          (assert (subtypep newtype elem-type env))
+          `(let ((,bufname ,buf)
+                 (,newname ,new))
+             (declare (type ,newtype ,newname))
+             (when (= (length (data ,bufname)) (size ,bufname))
+               (%resize ,bufname (the ind (* 2 (+ 1 (length (data ,bufname)))))))
+             (setf (aref (data ,bufname) (end ,bufname)) ,newname)
+             (setf (end ,bufname)
+                   (the ind (if (= (1- (length (data ,bufname))) (end ,bufname))
+                                0
+                                (1+ (end ,bufname)))))
+             (setf (size ,bufname) (the ind (1+ (size ,bufname))))
+             ,newname)))))
+
+
+(defpolymorph pop-back ((buf ring-buffer)) t
+  (if (= 0 (size buf))
+      (error "Back requires a non-empty buffer")
+      (progn
+        (when (> (length (data buf)) (* 3 (size buf)))
+          (%resize buf (size buf)))
+        (setf (end buf)
+              (the ind (if (= 0 (end buf))
+                           (1- (length (data buf)))
+                           (1- (end buf)))))
+        (setf (size buf) (the ind (1- (size buf))))
+        (aref (data buf) (end buf)))))
+
+(defpolymorph-compiler-macro pop-front (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF")))
+          `(let ((,bufname ,buf))
+             (declare (type ,type ,bufname))
+             (if (= 0 (size ,bufname))
+                 (error "Front requires a non-empty buffer")
+                 (the ,elem-type (progn
+                                   (when (> (length (data ,bufname)) (* 3 (size ,bufname)))
+                                     (%resize ,bufname (size ,bufname)))
+                                   (setf (end ,bufname)
+                                         (the ind (if (= 0 (end ,bufname))
+                                                      (1- (length (data ,bufname)))
+                                                      (1- (end ,bufname)))))
+                                   (setf (size ,bufname) (the ind (1- (size ,bufname))))
+                                   (aref (data ,bufname) (end ,bufname))))))))))
+
+(defpolymorph empty-p ((buf ring-buffer)) boolean
+  (= 0 (size buf)))
+
+
+(defpolymorph (at :inline t) ((buf ring-buffer) &rest indexes)
+    (values (or null t) &optional boolean)
+  (let* ((error-policy (member :error indexes))
+         (begin (begin buf))
+         (size (size buf))
+         (data (data buf))
+         (indexes (if error-policy
+                      (nbutlast (nbutlast indexes))
+                      indexes))
+         (ind (first indexes)))
+    (flet ((%at ()
+             (let ((maybe-pos (+ begin ind)))
+               (if (>= maybe-pos (length data))
+                   (aref data (- maybe-pos (length data)))
+                   (aref data maybe-pos)))))
+
+      (declare (inline %at))
+      (assert (null (cdr indexes)))
+      (if error-policy
+
+          (if (second error-policy)
+              (progn
+                ;(unless (= 1 (length indexes))
+                ;  (error 'simple-error :format-control "Only one index is allowed for ring-buffer") ;; FIXME later make this better
+                (unless (< ind size)
+                  (error 'simple-error
+                   :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+                   :format-arguments (list ind size size)))
+                (%at))
+              (if (< ind size)
+                  (values (%at) t)
+                  (values nil nil)))
+
+          (progn
+            ;(unless (= 1 (length indexes))
+            ;  (error 'simple-error :format-control "Only one index is allowed for ring-buffer") ;; FIXME later make this better
+            (unless (< ind size)
+              (error 'simple-error
+               :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+               :format-arguments (list (first indexes) size size)))
+            (%at))))))
+
+
+(defpolymorph-compiler-macro at (ring-buffer &rest) (&whole form buf &rest indexes &environment env)
+ (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*))))
+          (if (constantp (length indexes) env)
+              (let* ((error-policy (member :error indexes)))
+                (assert (= 1 (length indexes)))
+                (let ((indname (gensym "IND"))
+                      (sizename (gensym "SIZE"))
+                      (bufname (gensym "BUF"))
+                      (%at (gensym "AT"))
+                      (dataname (gensym "DATA"))
+                      (beginname (gensym "BEGIN")))
+                  `(let* ((,bufname ,buf)
+                          (,sizename (size ,bufname))
+                          (,beginname (begin ,bufname))
+                          (,dataname (data ,bufname)))
+                     (declare (type ,type ,bufname))
+                     (flet ((,%at (ind)
+                              (let ((maybe-pos (+ ,beginname ind)))
+                                (if (>= maybe-pos (length ,dataname))
+                                    (aref ,dataname (- maybe-pos (length ,dataname)))
+                                    (aref ,dataname maybe-pos)))))
+                       (declare (inline ,%at))
+                       ,(if error-policy
+                            (let ((indexes (butlast (butlast indexes))))
+                              `(let ((,indname ,(first indexes)))
+                                 (if ,(second error-policy)
+                                     (the (values ,elem-type &optional)
+                                          (progn
+                                            (unless (< ,indname ,sizename)
+                                              (error 'simple-error
+                                                     :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+                                                     :format-arguments (list ,indname ,sizename ,sizename)))
+                                            (,%at ,indname)))
+                                     (the (values (or null ,elem-type) boolean &optional)
+                                          (if (< ,indname ,sizename)
+                                              (values (,%at) t)
+                                              (values nil nil))))))
+                            `(the (values ,elem-type &optional)
+                                  (progn
+                                    (unless (< ,(first indexes) ,sizename)
+                                      (error 'simple-error
+                                             :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+                                             :format-arguments (list ,(first indexes) ,sizename ,sizename)))
+                                    (,%at ,(first indexes)))))))))
+
+              `(the (values (or null ,elem-type) &optional boolean) ,form))))))
+
 
 (defun ring-buffer-adhoc-test ()
+  (declare (optimize speed))
   (let ((b (ring-buffer 'fixnum)))
     (push-front 1 b)
-    (print b)
     (push-front 2 b)
-    (print b)
     (push-front 3 b)
-    (print b)
     (push-front 4 b)
-    (print b)
     (pop-front b)
-    (print b)
     (pop-back b)
-    (print b)
-    (push-back 5 b)
-    (print b)
+    (push-back 1 b)
     (push-back 99 b)
-    (print b)
     (assert (and (= (at b 0) 3)
                  (= (at b 1) 2)
-                 (= (at b 2) 5)
+                 (= (at b 2) 1)
                  (= (at b 3) 99)))))
+
+
