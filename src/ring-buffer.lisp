@@ -2,42 +2,6 @@
 (in-package #:polymorph.data-structures)
 
 
-(defmacro def (type name inheritance &body slots) ;; This actually comes from polymorph.macros
-                                                  ;; and should be there. I put it here just to
-  (ecase type                                     ;; illustrate what's happening.
-    (:struct
-     (let ((typed-slots
-             (loop :for slot :in slots
-                   :collect (if (listp slot)
-                                (destructuring-bind
-                                    (sname &optional (stype t) (sform (default stype))) slot
-                                  `(,sname ,stype ,sform))
-                                `(,slot t t)))))
-       `(progn
-          ,(if inheritance
-               `(defstruct (,name (:include ,@inheritance))
-                  ,@(loop :for (sname stype sform) :in typed-slots
-                          :collect `(,sname ,sform
-                                            :type ,stype)))
-
-               `(defstruct ,name
-                  ,@(loop :for (sname stype sform) :in typed-slots
-                          :collect `(,sname ,sform
-                                            :type ,stype))))
-          ,@(loop :for (sname stype _) :in typed-slots
-                  :unless (fboundp sname)
-                    :collect `(define-polymorphic-function ,sname (object) :overwrite t)
-                  :collect `(defpolymorph (,sname :inline t) ((,name rb)) (values ,stype &optional)
-                              (,(intern (format nil "~s-~s" name sname))
-                               ,name))
-                  :unless (fboundp `(setf ,sname))
-                    :collect `(define-polymorphic-function (setf ,sname) (new object) :overwrite t)
-                  :collect `(defpolymorph ((setf ,sname) :inline t) ((new ,stype) (,name rb)) (values ,stype &optional)
-                              (setf (,(intern (format nil "~s-~s" name sname))
-                                     ,name)
-                                    new)))
-          ',name)))))
-
 (eval-when (:compile-toplevel
             :load-toplevel
             :execute)
@@ -73,18 +37,19 @@
                (gethash ',buf-code *paramterize-name*) ',buf-type
 
                (gethash ',buf-code *corresponding-ctype*)      ;; we create here a corresponding
-               (make-instance 'c-ring-buffer :element-type ',type))  ;; ctype
+               (make-instance 'c-ring-buffer :element-type ',type))))))  ;; ctype
 
-         (deftype ring-buffer (&optional typename)
-           (if (eq typename 'cl:*)          ;; by default, a ring-buffer type is just (or ,@all-the-other-rbs)
-               `rb
-               (progn
-                 (unless (gethash (cons 'ring-buffer (if (listp typename) typename (list typename)))
-                                 *unparamterize-name*)
-                  (ensure-ring-buffer typename))
-                (gethash (cons 'ring-buffer
-                               (if (listp typename) typename (list typename)))
-                         *unparamterize-name*))))))))
+
+(deftype ring-buffer (&optional typename)
+  (if (eq typename 'cl:*)          
+      `rb
+      (progn
+        (unless (gethash (cons 'ring-buffer (if (listp typename) typename (list typename)))
+                        *unparamterize-name*)
+         (ensure-ring-buffer typename))
+       (gethash (cons 'ring-buffer
+                      (if (listp typename) typename (list typename)))
+                *unparamterize-name*))))
 
 
 (eval-when (:compile-toplevel
@@ -93,38 +58,38 @@
   (define-ring-buffer t)
 
   (defun ensure-ring-buffer (type &optional (default (default type)))
-    (eval `(define-ring-buffer ,type ,default)))
+    (eval `(define-ring-buffer ,type ,default))))
 
-  (defun ring-buffer (type &optional initial)
-   (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                    *unparamterize-name*)
-     (ensure-ring-buffer type))
-   (let ((l (length initial)))
-     (funcall (intern
-               (format nil "MAKE-~s"
-                       (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                                *unparamterize-name*)))
+(defun ring-buffer (type &optional initial)
+  (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                   *unparamterize-name*)
+    (ensure-ring-buffer type))
+  (let ((l (length initial)))
+    (funcall (intern
+              (format nil "MAKE-~s"
+                      (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                               *unparamterize-name*)))
 
-              :size l
-              :data (make-array l :element-type t
-                                  :initial-contents initial))))
+             :size l
+             :data (make-array l :element-type t
+                                 :initial-contents initial))))
 
- (define-compiler-macro ring-buffer (type &optional initial)
-   (let ((type (eval type))
-         (l (gensym "L"))
-         (init (gensym "INIT")))
-     (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                      *unparamterize-name*)
-       (ensure-ring-buffer type))
-     `(let* ((,init ,initial)
-             (,l (length ,init)))
-        (,(intern (format nil "MAKE-~s"
-                          (gethash (cons 'ring-buffer (if (listp type) type (list type)))
-                                   *unparamterize-name*)))
+(define-compiler-macro ring-buffer (type &optional initial)
+  (let ((type (eval type))
+        (l (gensym "L"))
+        (init (gensym "INIT")))
+    (unless (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                     *unparamterize-name*)
+      (ensure-ring-buffer type))
+    `(let* ((,init ,initial)
+            (,l (length ,init)))
+       (,(intern (format nil "MAKE-~s"
+                         (gethash (cons 'ring-buffer (if (listp type) type (list type)))
+                                  *unparamterize-name*)))
 
-         :size ,l
-         :data (make-array ,l :element-type t
-                              :initial-contents ,init))))))
+        :size ,l
+        :data (make-array ,l :element-type t
+                             :initial-contents ,init)))))
  
 
 
@@ -419,7 +384,7 @@
          (size (size buf))
          (data (data buf))
          (indexes (if error-policy
-                      (nbutlast (nbutlast indexes))
+                      (butlast (butlast indexes))
                       indexes))
          (ind (first indexes)))
     (flet ((%at ()
@@ -446,8 +411,8 @@
                   (values nil nil)))
 
           (progn
-            ;(unless (= 1 (length indexes))
-            ;  (error 'simple-error :format-control "Only one index is allowed for ring-buffer") ;; FIXME later make this better
+             ;(unless (= 1 (length indexes))
+             ;  (error 'simple-error :format-control "Only one index is allowed for ring-buffer") ;; FIXME later make this better
             (unless (< ind size)
               (error 'simple-error
                :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
@@ -457,56 +422,59 @@
 
 (defpolymorph-compiler-macro at (ring-buffer &rest) (&whole form buf &rest indexes &environment env)
  (let ((type (%form-type buf env)))
-    (if (alexandria::type= type 'rb)
-        form
-        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*))))
-          (if (constantp (length indexes) env)
-              (let* ((error-policy (member :error indexes)))
-                (assert (= 1 (length indexes)))
-                (let ((indname (gensym "IND"))
-                      (sizename (gensym "SIZE"))
-                      (bufname (gensym "BUF"))
-                      (%at (gensym "AT"))
-                      (dataname (gensym "DATA"))
-                      (beginname (gensym "BEGIN")))
-                  `(let* ((,bufname ,buf)
-                          (,sizename (size ,bufname))
-                          (,beginname (begin ,bufname))
-                          (,dataname (data ,bufname)))
-                     (declare (type ,type ,bufname))
-                     (flet ((,%at (ind)
-                              (let ((maybe-pos (+ ,beginname ind)))
-                                (if (>= maybe-pos (length ,dataname))
-                                    (aref ,dataname (- maybe-pos (length ,dataname)))
-                                    (aref ,dataname maybe-pos)))))
-                       (declare (inline ,%at))
-                       ,(if error-policy
-                            (let ((indexes (butlast (butlast indexes))))
-                              `(let ((,indname ,(first indexes)))
-                                 (if ,(second error-policy)
-                                     (the (values ,elem-type &optional)
-                                          (progn
-                                            (unless (< ,indname ,sizename)
-                                              (error 'simple-error
-                                                     :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                                                     :format-arguments (list ,indname ,sizename ,sizename)))
-                                            (,%at ,indname)))
-                                     (the (values (or null ,elem-type) boolean &optional)
-                                          (if (< ,indname ,sizename)
-                                              (values (,%at) t)
-                                              (values nil nil))))))
-                            `(the (values ,elem-type &optional)
-                                  (progn
-                                    (unless (< ,(first indexes) ,sizename)
-                                      (error 'simple-error
-                                             :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
-                                             :format-arguments (list ,(first indexes) ,sizename ,sizename)))
-                                    (,%at ,(first indexes)))))))))
+    (let ((elem-type
+            (if (alexandria::type= type 'rb)
+                t
+                (c-rb-element-type (gethash type *corresponding-ctype*)))))
+      (if (constantp (length indexes) env)
+          (let ((error-policy (member :error indexes))
+                (indname (gensym "IND"))
+                (sizename (gensym "SIZE"))
+                (bufname (gensym "BUF"))
+                (%at (gensym "AT"))
+                (dataname (gensym "DATA"))
+                (beginname (gensym "BEGIN")))
+            `(let* ((,bufname ,buf)
+                    (,sizename (size ,bufname))
+                    (,beginname (begin ,bufname))
+                    (,dataname (data ,bufname)))
+               (declare (type ,type ,bufname))
+               (flet ((,%at (ind)
+                        (declare (type ind ind))
+                        (let ((maybe-pos (+ ,beginname ind)))
+                          (if (>= maybe-pos (length ,dataname))
+                              (aref ,dataname (- maybe-pos (length ,dataname)))
+                              (aref ,dataname maybe-pos)))))
+                 (declare (inline ,%at))
+                 ,(if error-policy
+                      (let ((indexes (butlast (butlast indexes))))
+                        `(let ((,indname ,(first indexes)))
+                           (if ,(second error-policy)
+                               (the (values ,elem-type &optional)
+                                    (progn
+                                      (unless (< ,indname ,sizename)
+                                        (error 'simple-error
+                                               :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+                                               :format-arguments (list ,indname ,sizename ,sizename)))
+                                      (,%at ,indname)))
+                               (the (values (or null ,elem-type) boolean &optional)
+                                    (if (< ,indname ,sizename)
+                                        (values (,%at ,indname) t)
+                                        (values nil nil))))))
+                      (progn
+                        (assert (= 1 (length indexes)))
+                        `(the (values ,elem-type &optional)
+                              (progn
+                                (unless (< ,(first indexes) ,sizename)
+                                  (error 'simple-error
+                                         :format-control "Invalid index ~s for (RING-BUFFER ~s), should be a non-negative integer below ~s."
+                                         :format-arguments (list ,(first indexes) ,sizename ,sizename)))
+                                (,%at ,(first indexes)))))))))
 
-              `(the (values (or null ,elem-type) &optional boolean) ,form))))))
+          `(the (values (or null ,elem-type) &optional boolean) ,form)))))
 
 
-(defun ring-buffer-adhoc-test ()
+(defun ring-buffer-adhoc-test-fast ()
   (declare (optimize speed))
   (let ((b (ring-buffer 'fixnum)))
     (push-front 1 b)
@@ -523,3 +491,17 @@
                  (= (at b 3) 99)))))
 
 
+(defun ring-buffer-adhoc-test ()
+  (let ((b (ring-buffer 'fixnum)))
+    (push-front 1 b)
+    (push-front 2 b)
+    (push-front 3 b)
+    (push-front 4 b)
+    (pop-front b)
+    (pop-back b)
+    (push-back 1 b)
+    (push-back 99 b)
+    (assert (and (= (at b 0) 3)
+                 (= (at b 1) 2)
+                 (= (at b 2) 1)
+                 (= (at b 3) 99)))))

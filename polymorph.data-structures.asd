@@ -11,6 +11,7 @@
                   :components
                   ((:file "package")
                    (:file "polymorphs")
+                   (:file "util")
                    (:file "double-linked-list")
                    (:file "ring-buffer")
                    (:file "priority-queue")
