@@ -172,7 +172,7 @@
             :load-toplevel
             :execute)
   (defun ensure-priority-queue (type &optional (default (default type)))
-    (eval `(define-priority-queue t ,default))))
+    (eval `(define-priority-queue ,type ,default))))
 
 (defun priority-queue (type &optional initial)
   (unless (gethash (cons 'priority-queue (if (listp type) type (list type)))
