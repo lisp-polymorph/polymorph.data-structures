@@ -13,8 +13,8 @@
 
   (def :struct pq ()
     (data (simple-array t (cl:*)) (make-array 256))
-    (size ind 1))
-  )
+    (size ind 1)))
+  
 
 (defmacro define-priority-queue (type &optional (default (default type))
                                         force-p)
@@ -86,10 +86,25 @@
       (error "priority queue is empty!")
       (aref (data queue) 1)))
 
+
+(defpolymorph-compiler-macro front (priority-queue) (&whole form queue &environment env)
+  (let ((type (%form-type queue env)))
+    (if (alexandria::type= type 'pq)
+        form
+        (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*))))
+           `(the ,elem-type ,form)))))
+
 (defpolymorph back ((queue priority-queue)) t
   (if (empty-p queue)
       (error "priority queue is empty!")
       (aref (data queue) (1- (size queue)))))
+
+(defpolymorph-compiler-macro back (priority-queue) (&whole form queue &environment env)
+  (let ((type (%form-type queue env)))
+    (if (alexandria::type= type 'pq)
+        form
+        (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*))))
+           `(the ,elem-type ,form)))))
 
 (defpolymorph push-back ((item t) (queue priority-queue)) t
   (let ((capacity (array-total-size (data queue)))
@@ -103,6 +118,16 @@
     (sift-up queue size)
     (setf (size queue) (the ind (1+ (size queue))))
     item))
+
+(defpolymorph-compiler-macro push-back (t priority-queue) (&whole form item queue &environment env)
+  (let ((type (%form-type queue env)))
+    (if (alexandria::type= type 'pq)
+        form
+        (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*)))
+              (item-type (%form-type item env)))
+          (assert (subtypep item-type elem-type env))
+          `(the ,elem-type ,form)))))
+
 
 (defpolymorph pop-front ((queue priority-queue)) t
   (let ((capacity (array-total-size (data queue)))
@@ -120,6 +145,15 @@
         (setf (data queue)
               (the (simple-array t (cl:*))
                    (adjust-array (data queue) (* size 2))))))))
+
+(defpolymorph-compiler-macro pop-front (priority-queue) (&whole form queue &environment env)
+  (let ((type (%form-type queue env)))
+    (if (alexandria::type= type 'pq)
+        form
+        (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*))))
+           `(the ,elem-type ,form)))))
+
+
 
 (defpolymorph check ((queue priority-queue)) null
   (labels ((rec (a n i)
@@ -168,8 +202,39 @@
              :do (push-back item queue))
        queue)))
 
+
 (defun priority-queue-adhoc-test ()
   (declare (optimize debug safety))
+  (let ((b (priority-queue 'fixnum)))
+    (loop repeat 10
+          for sorted = (list)
+          do (print :inserting...)
+             (loop for x in (loop repeat 1000 collect (random 1000))
+                   do (push-back x b)
+                      (check b))
+             (print :deleting...)
+             (loop repeat 1000
+                   do (push (pop-front b) sorted)
+                      (check b))
+             (assert (equal (sort sorted #'<) sorted)))
+    (loop repeat 10
+          for sorted = (list)
+          do (print :mixed...)
+             (loop with inputs = (loop repeat 1000 collect (random 1000))
+                     initially (loop for x in inputs
+                                     do (push-back x b)
+                                     finally (setf sorted (sort inputs #'>)))
+                   while (> (size b) 1)
+                   do (if (zerop (random 4))
+                          (let ((random (random 1000)))
+                            (push-back random b)
+                            (push random sorted)
+                            (setf sorted (sort sorted #'>)))
+                          (assert (= (pop-front b) (pop sorted))))
+                      (check b)))))
+
+(defun priority-queue-adhoc-test-fast ()
+  (declare (optimize speed))
   (let ((b (priority-queue 'fixnum)))
     (loop repeat 10
           for sorted = (list)
