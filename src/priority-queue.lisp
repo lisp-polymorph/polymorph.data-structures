@@ -63,6 +63,27 @@
         :do (rotatef (aref data i) (aref data parent)))
   (values))
 
+(defpolymorph-compiler-macro sift-up (priority-queue ind) (&whole form queue last &environment env)
+  (let ((type (%form-type queue env)))
+    (if (alexandria::type= type 'pq)
+        form
+        (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*)))
+              (queuename (gensym "QUEUE"))
+              (lastname (gensym "LAST"))
+              (data (gensym "DATA"))
+              (i (gensym "I"))
+              (parent (gensym "PARENT")))
+          `(let ((,queuename ,queue)
+                 (,lastname ,last))
+             (loop :with ,data = (data ,queuename)
+                   :for ,i = ,lastname :then ,parent
+                   :for ,parent = (truncate ,i 2)
+                   :while (and (> ,parent 0)
+                               (polymorph.maths:> (the ,elem-type (aref data i)) (the ,elem-type (aref data parent))))
+                   :do (rotatef (aref ,data ,i) (aref ,data ,parent)))
+             (values))))))
+
+
 (defpolymorph (sift-down :inline t) ((queue priority-queue)) null
   "sifts root to bottom"
   (loop :with data = (data queue)
@@ -80,6 +101,36 @@
                     (setf i greater-child))
                   (loop-finish))))
   (values))
+
+
+(defpolymorph-compiler-macro sift-down (priority-queue) (&whole form queue &environment env)
+ (let* ((type (%form-type queue env)))
+   (if (alexandria::type= type 'pq)
+       form
+       (let ((elem-type (c-pq-element-type (gethash type *corresponding-ctype*)))
+             (queuename (gensym "QUEUE"))
+             (data (gensym "DATA"))
+             (left-child (gensym "LEFT"))
+             (right-child (gensym "RIGHT"))
+             (greater-child (gensym "GREATER"))
+             (i (gensym "I")))
+          `(let ((,queuename ,queue))
+             (loop :with ,data = (data ,queuename)
+                   :with ,i = 1
+                   :for ,left-child :of-type ind = (* ,i 2)
+                   :for ,right-child :of-type ind = (1+ (* ,i 2))
+                   :until (>= ,right-child (size ,queuename)) ; last elt lies at data[size-1]
+                   :do (let ((,greater-child (if (polymorph.maths:> (the ,elem-type (aref ,data ,left-child))
+                                                                    (the ,elem-type (aref ,data ,right-child)))
+                                                 ,left-child
+                                                 ,right-child)))
+                         (if (polymorph.maths:> (the ,elem-type (aref ,data ,greater-child)) (the ,elem-type (aref ,data ,i)))
+                             (progn
+                               (rotatef (aref ,data ,i) (aref ,data ,greater-child))
+                               (setf ,i ,greater-child))
+                             (loop-finish))))
+             (values))))))
+
 
 (defpolymorph front ((queue priority-queue)) t
   (if (empty-p queue)
