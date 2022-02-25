@@ -312,6 +312,7 @@
                                     (eq (color (right node)) :black))
                                l)
                               (t nil)))))))
+    ;; TODO why does this break? it works with labels normally
     ;;(declare (dynamic-extent #'recur))
     (let ((root (root tree))
           (sentinel (sentinel tree)))
