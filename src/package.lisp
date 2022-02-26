@@ -1,8 +1,10 @@
 ;;;; package.lisp
 
 (defpackage #:polymorph.data-structures
-  (:use #:cl #:polymorphic-functions #:introspect-ctype)
+  (:use #:cl #:polymorphic-functions #:introspect-ctype
+        #:polymorph.copy-cast)
   (:shadow #:find)
+  (:shadowing-import-from #:polymorph.maths #:=)
   (:import-from #:introspect-ctype #:default #:ind)
   ;; TODO export stuff here
   (:export #:dl-list

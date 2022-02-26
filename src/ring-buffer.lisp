@@ -474,6 +474,74 @@
           `(the (values (or null ,elem-type) &optional boolean) ,form)))))
 
 
+(defpolymorph (deep-copy :inline t) ((buf ring-buffer)) t
+  (make-rb :begin (begin buf)
+           :end (end buf)
+           :size (size buf)
+           :data (deep-copy (data buf))))
+
+(defpolymorph-compiler-macro deep-copy (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF"))
+              (dataname (gensym "DATA"))
+              (newname (gensym "NEW"))
+              (i (gensym "I")))
+          `(let* ((,bufname ,buf)
+                  (,dataname (data ,bufname))
+                  (,newname (make-array (length ,dataname) :element-type t)))
+            (declare (type ,type ,bufname))
+            (loop :for ,i :from 0 :below (length ,dataname)
+                  :do (setf (aref ,newname ,i)
+                            (deep-copy (the ,elem-type (aref ,dataname ,i)))))
+            (the ,type (,(alexandria:symbolicate 'make- type)
+                        :begin (begin ,bufname)
+                        :end (end ,bufname)
+                        :size (size ,bufname)
+                        :data ,newname)))))))
+
+(defpolymorph (shallow-copy :inline t) ((buf ring-buffer)) t
+  (make-rb :begin (begin buf)
+           :end (end buf)
+           :size (size buf)
+           :data (shallow-copy (data buf))))
+
+(defpolymorph-compiler-macro shallow-copy (ring-buffer) (&whole form buf &environment env)
+  (let ((type (%form-type buf env)))
+    (if (alexandria::type= type 'rb)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (bufname (gensym "BUF"))
+              (dataname (gensym "DATA"))
+              (newname (gensym "NEW"))
+              (i (gensym "I")))
+          `(let* ((,bufname ,buf)
+                  (,dataname (data ,bufname))
+                  (,newname (make-array (length ,dataname) :element-type t)))
+            (declare (type ,type ,bufname))
+            (loop :for ,i :from 0 :below (length ,dataname)
+                  :do (setf (aref ,newname ,i)
+                            (the ,elem-type (aref ,dataname ,i))))
+            (the ,type (,(alexandria:symbolicate 'make- type)
+                        :begin (begin ,bufname)
+                        :end (end ,bufname)
+                        :size (size ,bufname)
+                        :data ,newname)))))))
+
+
+(defpolymorph (= :inline t) ((first ring-buffer) (second ring-buffer)) boolean
+  (and (= (size first) (size second))
+       (loop :with fdata := (data first)
+             :with sdata := (data second)
+             :for i := (begin first) :then (mod (1+ i) (length fdata))
+             :for j := (begin second) :then (mod (1+ j) (length sdata))
+             :until (= i (end first))
+             :always (= (aref fdata i) (aref sdata j)))))
+
+
+
 (defun ring-buffer-adhoc-test-fast ()
   (declare (optimize speed))
   (let ((b (ring-buffer 'fixnum)))
