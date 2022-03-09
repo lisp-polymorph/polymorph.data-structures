@@ -11,18 +11,18 @@
     ((%elem-type :initarg :element-type
                  :reader c-rb-element-type)))
 
-  (def :struct rbt-node ()
-    (left rbt-node (error "break"))
-    (right rbt-node (error "break"))
-    (parent rbt-node (error "break"))
-    (color (member :red :black) :red)
-    (data t))
+  (def rbt-node ()
+    (:mut left rbt-node (error "break"))
+    (:mut right rbt-node (error "break"))
+    (:mut parent rbt-node (error "break"))
+    (:mut color (member :red :black) :red)
+    (:mut data t))
 
-  (def :struct rbt ()
-    (root rbt-node (allocate-instance (find-class 'node)))
-    (sentinel rbt-node (allocate-instance (find-class 'node)))
-    (size ind))
-  )
+  (def rbt ()
+    (:mut root rbt-node (allocate-instance (find-class 'node)))
+    (:mut sentinel rbt-node (allocate-instance (find-class 'node)))
+    (:mut size ind)))
+  
 
 (defmacro define-rb-tree (type &optional (default (default type))
                                  force-p)
@@ -57,13 +57,13 @@
           (color node)
           (data node)))
 
-(defpolymorph node-null ((node rbt-node) (tree rb-tree)) boolean
+(defpolymorph (node-null :inline t) ((node rbt-node) (tree rb-tree)) boolean
   (eq node (sentinel tree)))
 
-(defpolymorph left-child-p ((node rbt-node)) boolean
+(defpolymorph (left-child-p :inline t) ((node rbt-node)) boolean
   (eq node (left (parent node))))
 
-(defpolymorph left-rotate ((tree rb-tree) (x rbt-node)) null
+(defpolymorph (left-rotate :inline :maybe) ((tree rb-tree) (x rbt-node)) null
   (let ((y (right x)))
     (setf (right x) (left y))
     (unless (node-null (left y) tree)
@@ -79,7 +79,7 @@
           (parent x) y)
     (values)))
 
-(defpolymorph right-rotate ((tree rb-tree) (y rbt-node)) null
+(defpolymorph (right-rotate :inline :maybe) ((tree rb-tree) (y rbt-node)) null
   (let ((x (left y)))
     (setf (left y) (right x))
     (unless (node-null (right x) tree)
@@ -175,15 +175,45 @@
               :do (setf x (right x))
               :finally (return x)))))
 
-(defpolymorph find ((tree rb-tree) (item t)) (values rbt-node boolean)
+(defpolymorph (find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
+  (declare (pf-defined-before-use) (optimize speed space))
   (loop :with parent = (sentinel tree)
         :with x = (root tree)
         :until (node-null x tree)
-        :do (setf parent x)
+        :do (setf* parent x)
             (if (polymorph.maths:< item (data x))
-                (setf x (left x))
-                (setf x (right x)))
+                (setf* x (left x))
+                (setf* x (right x)))
         :finally (return (values parent t))))
+
+(defpolymorph-compiler-macro find (rb-tree t) (&whole form tree item &environment env)
+  (let ((type (%form-type tree env)))
+    (if (alexandria:type= type 'rbt)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (newtype (%form-type item env))
+              (treename (gensym "TREE"))
+              (itemname (gensym "ITEM"))
+              (parent (gensym "PARENT"))
+              (x (gensym "X")))
+          (assert (subtypep newtype elem-type env)
+                  (item)
+                  'type-error :context (format nil
+                                               "when searching for an element in (RB-TREE ~s)"
+                                               elem-type)
+                              :expected-type elem-type :datum 'item)
+          `(let ((,treename ,tree)
+                 (,itemname ,item))
+             (declare (type ,type ,treename)
+                      (type ,newtype ,itemname))
+             (loop :with ,parent = (sentinel ,treename)
+                   :with ,x = (root ,treename)
+                   :until (node-null ,x ,treename)
+                   :do (setf* ,parent ,x)
+                       (if (polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,x)))
+                           (setf* ,x (left ,x))
+                           (setf* ,x (right ,x)))
+                   :finally (return (values ,parent t))))))))
 
 (defpolymorph insert ((tree rb-tree) (item t)) rbt-node
   (let* ((y (find tree item))
@@ -200,6 +230,41 @@
     (rb-insert-fixup tree z)
     (incf (size tree))
     z))
+
+(defpolymorph-compiler-macro insert (rb-tree t) (&whole form tree item &environment env)
+  (let ((type (%form-type tree env)))
+    (if (alexandria:type= type 'rbt)
+        form
+        (let ((elem-type (c-rb-element-type (gethash type *corresponding-ctype*)))
+              (newtype (%form-type item env))
+              (treename (gensym "TREE"))
+              (itemname (gensym "ITEM"))
+              (y (gensym "Y"))
+              (z (gensym "Z")))
+          (assert (subtypep newtype elem-type env)
+                  (item)
+                  'type-error :context (format nil
+                                               "when inserting an element into (RB-TREE ~s)"
+                                               elem-type)
+                              :expected-type elem-type :datum 'item)
+          `(let ((,treename ,tree)
+                 (,itemname ,item))
+             (declare (type ,type ,treename)
+                      (type ,newtype ,itemname))
+             (let* ((,y (find ,treename ,itemname))
+                    (,z (make-rbt-node :data ,itemname
+                                       :parent ,y
+                                       :color :red
+                                       :left (sentinel ,treename) :right (sentinel ,treename))))
+               (cond ((node-null ,y ,treename)
+                      (setf (root ,treename) ,z))
+                     ((polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,y)))
+                      (setf (left ,y) ,z))
+                     (t
+                      (setf (right ,y) ,z)))
+               (rb-insert-fixup ,treename ,z)
+               (incf (size ,treename))
+               ,z))))))
 
 ;; links NEW with OLD's parents
 (defpolymorph transplant ((tree rb-tree) (old rbt-node) (new rbt-node)) null
@@ -340,17 +405,18 @@
     (eval `(define-rb-tree ,type ,default))))
 
 (defun rb-tree (type &optional initial)
+  (declare (ignorable initial))
   (unless (gethash (cons 'rb-tree (if (listp type) type (list type)))
                    *unparamterize-name*)
     (ensure-rb-tree type))
   (let* ((sentinel
            (let ((%node (allocate-instance (find-class 'rbt-node))))
-             (setf (color %node) :black
+             (setf* (color %node) :black
                    ;; these can stay uninitialized
                    ;;(right %node) %node
                    ;;(parent %node) %node
                    ;;(data %node) (default type)
-                   (left %node) %node)
+                    (left %node) %node)
              %node))
          (tree
            (funcall (intern
@@ -360,11 +426,12 @@
                     :size 0
                     :sentinel sentinel
                     :root sentinel)))
-    (dolist (x initial)
-      (insert tree x))
+    ;(dolist (x initial)
+    ;  (insert tree x)
     tree))
 
 (define-compiler-macro rb-tree (type &optional initial)
+  (declare (ignorable initial))
   (let ((type (eval type))
         (init (gensym "INIT")))
     (unless (gethash (cons 'rb-tree (if (listp type) type (list type)))
@@ -373,8 +440,9 @@
     `(let* ((,init ,initial)
             (sentinel
               (let ((%node (allocate-instance (find-class 'rbt-node))))
-                (setf (color %node) :black
-                      (left %node) %node)
+                (declare (type rbt-node %node))
+                (setf* (color %node) :black
+                       (left %node) %node)
                 %node))
             (tree
               (,(intern
@@ -384,8 +452,9 @@
                :size 0
                :sentinel sentinel
                :root sentinel)))
-       (dolist (x ,init)
-         (insert tree x))
+       (declare (ignorable ,init))
+       ;(dolist (x ,init)
+       ;  (insert tree (the ,type x))
        tree)))
 
 (defun rb-adhoc-test ()
@@ -410,3 +479,35 @@
                           (push (insert tree (random 1000)) inserted)
                           (erase tree (find tree (data (pop inserted)))))
                       (check tree)))))
+
+
+(defun rb-adhoc-test-fast ()
+  (declare (optimize (speed 3) (space 0)))
+  (let ((tree (rb-tree 'fixnum)))
+    (declare (type (rb-tree fixnum) tree))
+    (loop repeat 10
+          for inserted = (list)
+          do (print :inserting...)
+             (loop for x in (loop repeat 1000 collect (random 1000))
+                   do (push x inserted)
+                      (insert tree (the fixnum x))
+                      (check tree))
+             (print :deleting...)
+             (loop for item in inserted
+                   do (let ((toerase (find tree (the fixnum item))))
+                       (erase tree toerase)
+                       (check tree)))
+             (print :mixed...)
+             (loop initially (loop for x in (loop repeat 1000 collect (random 1000))
+                                   do (push (insert tree (the fixnum x)) inserted))
+                   while (plusp (size tree))
+                   do (if (zerop (random 4))
+                          (push (insert tree (the fixnum (random 1000))) inserted)
+                          (erase tree (find tree (the fixnum (data (pop inserted))))))
+                      (check tree)))))
+
+
+(defun foo ()
+  (declare (optimize speed space))
+  (let ((x (rb-tree 'fixnum)))
+   (find x 100)))

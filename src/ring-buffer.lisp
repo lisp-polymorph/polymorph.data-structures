@@ -15,11 +15,11 @@
             :reader c-rb-size
             :type ind)))
 
-  (def :struct rb ()
-    (begin ind)
-    (end ind)
-    (size ind)
-    (data (simple-array t (cl:*))
+  (def rb ()
+    (:mut begin ind)
+    (:mut end ind)
+    (:mut size ind)
+    (:mut data (simple-array t (cl:*))
           (make-array 0))))
 
 (defmacro define-ring-buffer (type &optional (default (default type))

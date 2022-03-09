@@ -9,14 +9,14 @@
     ((%elem-type :initarg :element-type
                  :reader c-dl-element-type)))
 
-  (def :struct node ()
-    (prev node (error "Recursive allocation is not possible"))
-    (data t)
-    (next node (error "Recursive allocation is not possible")))
+  (def node ()
+    (:mut prev node (error "Recursive allocation is not possible"))
+    (:mut data t)
+    (:mut next node (error "Recursive allocation is not possible")))
 
-  (def :struct dl ()
-    (anchor node (allocate-instance (find-class 'node)))
-    (size ind)))
+  (def dl ()
+    (:mut anchor node (allocate-instance (find-class 'node)))
+    (:mut size ind)))
 
 
 (defmacro define-dl-list (type &optional (default (default type))

@@ -11,9 +11,9 @@
             :reader c-pq-size
             :type ind)))
 
-  (def :struct pq ()
-    (data (simple-array t (cl:*)) (make-array 256))
-    (size ind 1)))
+  (def pq ()
+    (:mut data (simple-array t (cl:*)) (make-array 256))
+    (:mut size ind 1)))
   
 
 (defmacro define-priority-queue (type &optional (default (default type))

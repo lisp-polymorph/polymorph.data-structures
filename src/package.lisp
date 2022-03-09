@@ -2,7 +2,7 @@
 
 (defpackage #:polymorph.data-structures
   (:use #:cl #:polymorphic-functions #:introspect-ctype
-        #:polymorph.copy-cast)
+        #:polymorph.copy-cast #:polymorph.macros)
   (:shadow #:find)
   (:shadowing-import-from #:polymorph.maths #:=)
   (:import-from #:introspect-ctype #:default #:ind)
