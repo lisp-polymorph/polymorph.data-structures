@@ -176,7 +176,7 @@
               :finally (return x)))))
 
 (defpolymorph (find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
-  (declare (pf-defined-before-use) (optimize speed space))
+  (declare (optimize (speed 3) space) (pf-defined-before-use))
   (loop :with parent = (sentinel tree)
         :with x = (root tree)
         :until (node-null x tree)
@@ -205,15 +205,18 @@
           `(let ((,treename ,tree)
                  (,itemname ,item))
              (declare (type ,type ,treename)
-                      (type ,newtype ,itemname))
-             (loop :with ,parent = (sentinel ,treename)
-                   :with ,x = (root ,treename)
-                   :until (node-null ,x ,treename)
-                   :do (setf* ,parent ,x)
-                       (if (polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,x)))
-                           (setf* ,x (left ,x))
-                           (setf* ,x (right ,x)))
-                   :finally (return (values ,parent t))))))))
+                      (type ,newtype ,itemname)
+                      (optimize speed space)
+                      (pf-defined-before-use))
+             (the (values rbt-node boolean)
+                  (let ((,parent (sentinel ,treename))
+                        (,x (root ,treename)))
+                    (loop :until (node-null ,x ,treename)
+                          :do (setf* ,parent ,x)
+                              (if (polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,x)))
+                                  (setf* ,x (left ,x))
+                                  (setf* ,x (right ,x)))
+                          :finally (return (values ,parent t))))))))))
 
 (defpolymorph insert ((tree rb-tree) (item t)) rbt-node
   (let* ((y (find tree item))
@@ -250,7 +253,8 @@
           `(let ((,treename ,tree)
                  (,itemname ,item))
              (declare (type ,type ,treename)
-                      (type ,newtype ,itemname))
+                      (type ,newtype ,itemname)
+                      (optimize speed) (pf-defined-before-use))
              (let* ((,y (find ,treename ,itemname))
                     (,z (make-rbt-node :data ,itemname
                                        :parent ,y
@@ -404,6 +408,7 @@
   (defun ensure-rb-tree (type &optional (default (default type)))
     (eval `(define-rb-tree ,type ,default))))
 
+(declaim (ftype (function (symbol &optional list) (values rb-tree &optional)) rb-tree))
 (defun rb-tree (type &optional initial)
   (declare (ignorable initial))
   (unless (gethash (cons 'rb-tree (if (listp type) type (list type)))
@@ -437,25 +442,26 @@
     (unless (gethash (cons 'rb-tree (if (listp type) type (list type)))
                      *unparamterize-name*)
       (ensure-rb-tree type))
-    `(let* ((,init ,initial)
-            (sentinel
-              (let ((%node (allocate-instance (find-class 'rbt-node))))
-                (declare (type rbt-node %node))
-                (setf* (color %node) :black
-                       (left %node) %node)
-                %node))
-            (tree
-              (,(intern
-                 (format nil "MAKE-~s"
-                         (gethash (cons 'rb-tree (if (listp type) type (list type)))
-                                  *unparamterize-name*)))
-               :size 0
-               :sentinel sentinel
-               :root sentinel)))
-       (declare (ignorable ,init))
-       ;(dolist (x ,init)
-       ;  (insert tree (the ,type x))
-       tree)))
+    `(the (rb-tree ,type)
+          (let* ((,init ,initial)
+                 (sentinel
+                   (let ((%node (allocate-instance (find-class 'rbt-node))))
+                     (declare (type rbt-node %node))
+                     (setf* (color %node) :black
+                            (left %node) %node)
+                     %node))
+                 (tree
+                   (,(intern
+                      (format nil "MAKE-~s"
+                              (gethash (cons 'rb-tree (if (listp type) type (list type)))
+                                       *unparamterize-name*)))
+                    :size 0
+                    :sentinel sentinel
+                    :root sentinel)))
+            (declare (ignorable ,init))
+            ;(dolist (x ,init)
+            ;  (insert tree (the ,type x))
+            tree))))
 
 (defun rb-adhoc-test ()
   (declare (optimize debug safety))
@@ -510,4 +516,5 @@
 (defun foo ()
   (declare (optimize speed space))
   (let ((x (rb-tree 'fixnum)))
-   (find x 100)))
+    (find x 100)))
+
