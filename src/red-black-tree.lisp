@@ -64,7 +64,7 @@
   (eq node (left (parent node))))
 
 (defpolymorph (left-rotate :inline :maybe) ((tree rb-tree) (x rbt-node)) null
-  (let ((y (right x)))
+  (bind (((y :infer) (right x)))
     (setf (right x) (left y))
     (unless (node-null (left y) tree)
       (setf (parent (left y)) x))
@@ -80,7 +80,7 @@
     (values)))
 
 (defpolymorph (right-rotate :inline :maybe) ((tree rb-tree) (y rbt-node)) null
-  (let ((x (left y)))
+  (bind (((x :infer) (left y)))
     (setf (left y) (right x))
     (unless (node-null (right x) tree)
       (setf (parent (right x)) y))
@@ -96,12 +96,12 @@
     (values)))
 
 ;; ()/[] denote red/black nodes
-(defpolymorph rb-insert-fixup ((tree rb-tree) (z rbt-node)) null
-  (loop :for p = (parent z)
+(defpolymorph (rb-insert-fixup :inline :maybe) ((tree rb-tree) (z rbt-node)) null
+  (loop :for p :of-type rbt-node = (parent z)
         :while (eq (color (parent z)) :red)
-        :do (let ((pp (parent p)))
+        :do (bind (((pp :infer) (parent p)))
               (if (left-child-p p)
-                  (let ((y (right pp)))
+                  (bind (((y :infer) (right pp)))
                     (if (eq (color y) :red)
                         ;;      [pp]            (pp)
                         ;;   (p)    (y) ->   [p]    [y]
@@ -131,7 +131,7 @@
                           (right-rotate tree pp)
                           (setf (color p) :black (color pp) :red))))
                   ;; symmetrical with left/right swapped
-                  (let ((y (left pp)))
+                  (bind (((y :infer) (left pp)))
                     (if (eq (color y) :red)
                         (setf (color pp) :red
                               (color p) :black (color y) :black
@@ -176,8 +176,8 @@
               :finally (return x)))))
 
 (defpolymorph (find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
-  (bind (((parent rbt-node) (sentinel tree))
-         ((x rbt-node) (root tree)))
+  (bind (((parent :infer) (sentinel tree))
+         ((x :infer) (root tree)))
     (loop :until (node-null x tree)
           :do (setf parent x)
               (if (polymorph.maths:< item (data x))
@@ -202,11 +202,11 @@
                                                elem-type)
                               :expected-type elem-type :datum 'item)
 
-          (let ((form `(bind ((,treename ,tree)
-                              (,itemname ,item))
+          (let ((form `(bind (((,treename ,type) ,tree)
+                              ((,itemname :infer) ,item))
                          (the (values rbt-node boolean)
-                              (bind (((,parent rbt-node) (sentinel ,treename))
-                                     ((,x rbt-node) (root ,treename)))
+                              (bind (((,parent :infer) (sentinel ,treename))
+                                     ((,x :infer) (root ,treename)))
                                 (loop :until (node-null ,x ,treename)
                                       :do (setf ,parent ,x)
                                           (if (polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,x)))
@@ -217,11 +217,11 @@
 
 
 (defpolymorph insert ((tree rb-tree) (item t)) rbt-node
-  (bind* ((y (find tree item))
-          (z (make-rbt-node :data item
-                            :parent y
-                            :color :red
-                            :left (sentinel tree) :right (sentinel tree))))
+  (bind* (((y :infer) (find tree item))
+          ((z :infer) (make-rbt-node :data item
+                                     :parent y
+                                     :color :red
+                                     :left (sentinel tree) :right (sentinel tree))))
     (cond ((node-null y tree)
            (setf (root tree) z))
           ((polymorph.maths:< item (data y))
@@ -248,16 +248,13 @@
                                                "when inserting an element into (RB-TREE ~s)"
                                                elem-type)
                               :expected-type elem-type :datum 'item)
-          `(let ((,treename ,tree)
-                 (,itemname ,item))
-             (declare (type ,type ,treename)
-                      (type ,newtype ,itemname)
-                      (optimize speed) (pf-defined-before-use))
-             (let* ((,y (find ,treename ,itemname))
-                    (,z (make-rbt-node :data ,itemname
-                                       :parent ,y
-                                       :color :red
-                                       :left (sentinel ,treename) :right (sentinel ,treename))))
+          `(bind (((,treename ,type) ,tree)
+                  ((,itemname ,newtype) ,item))
+             (bind* (((,y :infer) (find ,treename ,itemname))
+                     ((,z :infer) (make-rbt-node :data ,itemname
+                                                :parent ,y
+                                                :color :red
+                                                :left (sentinel ,treename) :right (sentinel ,treename))))
                (cond ((node-null ,y ,treename)
                       (setf (root ,treename) ,z))
                      ((polymorph.maths:< (the ,newtype ,itemname) (the ,elem-type (data ,y)))
@@ -283,9 +280,8 @@
   (loop :until (or (eq (color x) :red)
                    (eq x (root tree)))
         :do (if (left-child-p x)
-                (let* ((parent (parent x))
-                       (w (right parent)))
-                  (declare (type rbt-node parent w))
+                (bind* (((parent :infer) (parent x))
+                        ((w :infer) (right parent)))
                   (when (eq (color w) :red)
                     (setf (color w) :black (color parent) :red)
                     (left-rotate tree parent)
@@ -305,9 +301,8 @@
                         (left-rotate tree parent)
                         (setf x (root tree)))))
                 ;; symmetric with left/right, x is right child
-                (let* ((parent (parent x))
-                       (w (left parent)))
-                  (declare (type rbt-node parent w))
+                (bind* (((parent :infer) (parent x))
+                        ((w :infer) (left parent)))
                   (when (eq (color w) :red)
                     (setf (color w) :black (color parent) :red)
                     (right-rotate tree parent)
@@ -330,10 +325,9 @@
   (values))
 
 (defpolymorph erase ((tree rb-tree) (z rbt-node)) rbt-node
-  (let* ((y z)
-         (delete-color (color y))
-         sub)
-    (declare (type rbt-node y))
+  (bind* (((y :infer) z)
+          ((delete-color :infer) (color y))
+          (sub))
     (cond ((node-null (the rbt-node (left z)) tree)
            (setf sub (right z))
            (transplant tree z (the rbt-node sub)))
@@ -518,3 +512,18 @@
 
 
 
+(defun %test ()
+  (declare (optimize (speed 3) (safety 0) (space 0)))
+  (bind (((rbt :infer) (rb-tree 'fixnum)))
+    (insert rbt 100)))
+
+
+(defun time-test ()
+  (declare (optimize speed))
+  (bind (((rbt :infer) (rb-tree 'fixnum))
+         (ar (make-array 1000000 :element-type 'fixnum)))
+    (loop :for i :from 0 :below (length ar)
+          :do (setf (aref ar i) (random 200)))
+    (time (loop :for x :of-type fixnum :across ar
+                :do (insert rbt x)))
+    rbt))
