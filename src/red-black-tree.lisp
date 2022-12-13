@@ -41,6 +41,15 @@
                (gethash ',tree-code *corresponding-ctype*)
                (make-instance 'c-rb-tree :element-type ',type))))))
 
+
+(eval-when (:compile-toplevel
+            :load-toplevel
+            :execute)
+  (defun ensure-rb-tree (type &optional (default (default type)))
+    (eval `(define-rb-tree ,type ,default))))
+
+
+
 (deftype rb-tree (&optional typename)
   (if (eq typename 'cl:*)
       `rbt
@@ -145,7 +154,7 @@
         :finally (setf (color (root tree)) :black))
   (values))
 
-(defpolymorph next ((node rb-tree)) (or rb-tree null)
+(defpolymorph next-node ((node rb-tree)) (or rb-tree null)
   (flet ((sentinelp (node)
            (eq node (left node))))
     ;;(declare (dynamic-extent #'sentinelp))
@@ -175,7 +184,7 @@
               :do (setf x (right x))
               :finally (return x)))))
 
-(defpolymorph (find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
+(defpolymorph (%find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
   (bind (((parent :infer) (sentinel tree))
          ((x :infer) (root tree)))
     (loop :until (node-null x tree)
@@ -185,7 +194,8 @@
                   (setf x (right x)))
           :finally (return (values parent t)))))
 
-(defpolymorph-compiler-macro find (rb-tree t) (&whole form tree item &environment env)
+
+(defpolymorph-compiler-macro %find (rb-tree t) (&whole form tree item &environment env)
   (let ((type (%form-type tree env)))
     (if (alexandria:type= type 'rbt)
         form
@@ -215,19 +225,18 @@
                                       :finally (return (values ,parent t))))))))
             form)))))
 
-
-(defpolymorph insert ((tree rb-tree) (item t)) rbt-node
-  (bind* (((y :infer) (find tree item))
+(defpolymorph insert ((tree rb-tree) (item t)) (values rbt-node &optional)
+  (bind* (((y :infer) (%find tree item))
           ((z :infer) (make-rbt-node :data item
                                      :parent y
                                      :color :red
                                      :left (sentinel tree) :right (sentinel tree))))
     (cond ((node-null y tree)
-           (setf (root tree) z))
+           (funcall #'(setf root) z tree))
           ((polymorph.maths:< item (data y))
-           (setf (left y) z))
+           (funcall #'(setf left) z y))
           (t
-           (setf (right y) z)))
+           (funcall #'(setf right) z y)))
     (rb-insert-fixup tree z)
     (setf (size tree) (the ind (1+ (size tree))))
     z))
@@ -250,7 +259,7 @@
                               :expected-type elem-type :datum 'item)
           `(bind (((,treename ,type) ,tree)
                   ((,itemname ,newtype) ,item))
-             (bind* (((,y :infer) (find ,treename ,itemname))
+             (bind* (((,y :infer) (%find ,treename ,itemname))
                      ((,z :infer) (make-rbt-node :data ,itemname
                                                 :parent ,y
                                                 :color :red
@@ -396,13 +405,6 @@
                (tree-to-list (right root) tree)))))
 
 
-
-(eval-when (:compile-toplevel
-            :load-toplevel
-            :execute)
-  (defun ensure-rb-tree (type &optional (default (default type)))
-    (eval `(define-rb-tree ,type ,default))))
-
 (declaim (ftype (function (symbol &optional list) (values rb-tree &optional)) rb-tree))
 (defun rb-tree (type &optional initial)
   (declare (ignorable initial))
@@ -470,7 +472,7 @@
                       (check tree))
              (print :deleting...)
              (loop for item in inserted
-                   do (erase tree (find tree item))
+                   do (erase tree (%find tree item))
                       (check tree))
              (print :mixed...)
              (loop initially (loop for x in (loop repeat 1000 collect (random 1000))
@@ -478,9 +480,8 @@
                    while (plusp (size tree))
                    do (if (zerop (random 4))
                           (push (insert tree (random 1000)) inserted)
-                          (erase tree (find tree (data (pop inserted)))))
+                          (erase tree (%find tree (data (pop inserted)))))
                       (check tree)))))
-
 
 (defun rb-adhoc-test-fast ()
   (declare (optimize (speed 3) (space 0)))
@@ -495,7 +496,7 @@
                       (check tree))
              (print :deleting...)
              (loop for item in inserted
-                   do (let ((toerase (find tree (the fixnum item))))
+                   do (let ((toerase (%find tree (the fixnum item))))
                         (declare (type rbt-node toerase))
                         (erase tree toerase)
                         (check tree)))
@@ -505,16 +506,16 @@
                    while (plusp (size tree))
                    do (if (zerop (random 4))
                           (push (insert tree (the fixnum (random 1000))) inserted)
-                          (erase tree (find tree (the fixnum
-                                                      (data
-                                                       (the rbt-node (pop inserted)))))))
+                          (erase tree (%find tree (the fixnum
+                                                       (data
+                                                        (the rbt-node (pop inserted)))))))
                       (check tree)))))
 
 
-
 (defun %test ()
-  (declare (optimize (speed 3) (safety 0) (space 0)))
-  (bind (((rbt :infer) (rb-tree 'fixnum)))
+  (declare (optimize (speed 3)))
+  (let ((rbt (rb-tree 'fixnum)))
+    (declare (type (rb-tree fixnum) rbt))
     (insert rbt 100)))
 
 

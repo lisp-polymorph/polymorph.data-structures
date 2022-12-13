@@ -10,9 +10,9 @@
                  :reader c-dl-element-type)))
 
   (def node ()
-    (:mut prev node (error "Recursive allocation is not possible"))
+    (:mut prev-node node (error "Recursive allocation is not possible"))
     (:mut data t)
-    (:mut next node (error "Recursive allocation is not possible")))
+    (:mut next-node node (error "Recursive allocation is not possible")))
 
   (def dl ()
     (:mut anchor node (allocate-instance (find-class 'node)))
@@ -54,15 +54,15 @@
 (defmethod print-object ((dl dl) stream)
   (loop :initially (format stream "#D(")
         :with node := (anchor dl)
-        :for next := (next node) :then (next next)
-        :until (eq next node)
-        :do (format stream "~s " (data next))
+        :for next-node := (next-node node) :then (next-node next-node)
+        :until (eq next-node node)
+        :do (format stream "~s " (data next-node))
         :finally (format stream ")")))
 
 (defpolymorph front ((dl-list dl-list)) t
   (if (= 0 (size dl-list))
       (error "Front requires a non-empty list")
-      (data (next (anchor dl-list)))))
+      (data (next-node (anchor dl-list)))))
 
 (defpolymorph-compiler-macro front (dl-list) (&whole form dl-list &environment env)
   (let ((type (%form-type dl-list env)))
@@ -74,7 +74,7 @@
 (defpolymorph (setf front) ((new t) (dl-list dl-list)) t
   (if (= 0 (size dl-list))
       (error "Front requires a non-empty list")
-      (setf (data (next (anchor dl-list))) new)))
+      (setf (data (next-node (anchor dl-list))) new)))
 
 (defpolymorph-compiler-macro (setf front) (t dl-list) (&whole form new dl-list &environment env)
   (let ((type (%form-type dl-list env)))
@@ -86,7 +86,7 @@
           `(the ,elem-type ,form)))))
 
 (defpolymorph back ((dl-list dl-list)) t
-  (data (prev (anchor dl-list))))
+  (data (prev-node (anchor dl-list))))
 
 (defpolymorph-compiler-macro back (dl-list) (&whole form dl-list &environment env)
   (let ((type (%form-type dl-list env)))
@@ -98,7 +98,7 @@
 (defpolymorph (setf back) ((new t) (dl-list dl-list)) t
   (if (= 0 (size dl-list))
       (error "Back requires a non-empty list")
-      (setf (data (prev (anchor dl-list))) new)))
+      (setf (data (prev-node (anchor dl-list))) new)))
 
 (defpolymorph-compiler-macro (setf back) (t dl-list) (&whole form new dl-list &environment env)
   (let ((type (%form-type dl-list env)))
@@ -115,10 +115,10 @@
 
 (defpolymorph push-front ((data t) (dl-list dl-list)) t
   (let* ((anchor (anchor dl-list))
-         (current (next anchor))
-         (new-node (make-node :data data :next current :prev anchor)))
-    (setf (prev current) new-node
-          (next anchor) new-node)
+         (current (next-node anchor))
+         (new-node (make-node :data data :next-node current :prev-node anchor)))
+    (setf (prev-node current) new-node
+          (next-node anchor) new-node)
     (incf (size dl-list))
     data))
 
@@ -136,10 +136,10 @@
 
 (defpolymorph push-back ((data t) (dl-list dl-list)) t
   (let* ((anchor (anchor dl-list))
-         (current (prev anchor))
-         (new-node (make-node :data data :prev current :next anchor)))
-    (setf (next current) new-node
-          (prev anchor) new-node)
+         (current (prev-node anchor))
+         (new-node (make-node :data data :prev-node current :next-node anchor)))
+    (setf (next-node current) new-node
+          (prev-node anchor) new-node)
     (incf (size dl-list))
     data))
 
@@ -158,10 +158,10 @@
   (if (= 0 (size dl-list))
       (error 'simple-error :format-control "Cannot pop from an empty list")
       (let* ((anchor (anchor dl-list))
-             (current (next anchor))
+             (current (next-node anchor))
              (data (data current)))
-        (setf (prev (next current)) anchor
-              (next anchor) (next current))
+        (setf (prev-node (next-node current)) anchor
+              (next-node anchor) (next-node current))
         (decf (size dl-list))
         data)))
 
@@ -179,10 +179,10 @@
   (if (= 0 (size dl-list))
       (error 'simple-error :format-control "Cannot pop from an empty list")
       (let* ((anchor (anchor dl-list))
-             (current (prev anchor))
+             (current (prev-node anchor))
              (data (data current)))
-        (setf (next (prev current)) anchor
-              (prev anchor) (prev current))
+        (setf (next-node (prev-node current)) anchor
+              (prev-node anchor) (prev-node current))
         (decf (size dl-list))
         data)))
 
@@ -205,10 +205,10 @@
     (flet ((%at (ind)
              (declare (type ind ind))
              (loop :with node := (anchor dl-list)
-                   :for next := (next node) :then (next next)
+                   :for next-node := (next-node node) :then (next-node next-node)
                    :until (= 0 ind)
                    :do (decf ind)
-                   :finally (return (data next)))))
+                   :finally (return (data next-node)))))
       (declare (inline %at))
       (assert (null (cdr indexes)))
       (if error-policy
@@ -252,10 +252,10 @@
                (flet ((,%at (ind)
                         (declare (type ind ind))
                         (loop :with node := (anchor ,dl-listname)
-                              :for next := (next node) :then (next next)
+                              :for next-node := (next-node node) :then (next-node next-node)
                               :until (= 0 ind)
                               :do (decf ind)
-                              :finally (return (data next)))))
+                              :finally (return (data next-node)))))
                  (declare (inline ,%at))
                  ,(if error-policy
                       `(if ,(second error-policy)
@@ -289,16 +289,16 @@
 
 #||
 (defmacro do-nodes (names dl-list &environment env &body body)
-  (destructuring-bind (nodename &key (data 'data) (prev 'prev) (next 'next)) names
+  (destructuring-bind (nodename &key (data 'data) (prev-node 'prev-node) (next-node 'next-node)) names
       (let* ((type (%form-type dl-list env))
              (truetype (gethash type *paramterize-name*))
              (element-type (or (second truetype) t)))
         `(loop :with anchor := (anchor ,dl-list)
-               :for ,nodename := (next anchor) :then (next ,nodename)
+               :for ,nodename := (next-node anchor) :then (next-node ,nodename)
                :until (eq ,nodename anchor)
                :do (symbol-macrolet ((,data (the ,element-type (data ,nodename)))
-                                     (,prev (prev ,nodename))
-                                     (,next (next ,nodename)))
+                                     (,prev-node (prev-node ,nodename))
+                                     (,next-node (next-node ,nodename)))
                      ,@body)))))
 ||#
 
@@ -311,8 +311,8 @@
                                                      (if (listp type) type (list type)))
                                                *unparamterize-name*)))))
          (anchor (anchor res)))
-    (setf (prev anchor) anchor
-          (next anchor) anchor)
+    (setf (prev-node anchor) anchor
+          (next-node anchor) anchor)
     res))
 
 (define-compiler-macro dl-list (type)
@@ -327,9 +327,34 @@
                              (gethash (cons 'dl-list (if (listp type) type (list type)))
                                       *unparamterize-name*)))))
             (,anchor (anchor ,res)))
-       (setf (prev ,anchor) ,anchor
-             (next ,anchor) ,anchor)
+       (setf (prev-node ,anchor) ,anchor
+             (next-node ,anchor) ,anchor)
        ,res)))
+
+
+(polymorph.macros::%def (iter-dllist (:include iter)) (:copy)
+  (:mut seq (or null node) (error "Supply a list"))
+  (anchor node (error "Need to supply anchor")))
+
+(defpolymorph (next :inline t) ((l iter-dllist)) (values t &optional)
+  (if (eq (anchor l) (seq l))
+      (iter-stop)
+      (prog1 (val (seq l))
+        (setf (seq l) (next (seq l))))))
+
+(defpolymorph iter ((l dl-list)) (values iter-dllist &optional)
+  (iter-dllist :seq (next (anchor l)) :anchor (anchor l)))
+
+
+(defpolymorph (collect :inline t) ((it iter) (type (eql dllist)) &optional ((combine function) #'identity))
+    (values dl-list &optional)
+  (declare (ignorable type))
+  (let ((res (dl-list 't)))
+    (handler-case
+        (loop (push-back (multiple-value-call combine (next it)) res))
+      (iterator-end (c)
+        (declare (ignore c))
+        res))))
 
 (defun dl-list-adhoc-test-fast ()
   (declare (optimize speed))

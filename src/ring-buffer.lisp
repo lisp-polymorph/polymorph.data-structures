@@ -393,7 +393,7 @@
                    (aref data (- maybe-pos (length data)))
                    (aref data maybe-pos)))))
 
-      (declare (inline %at))
+      ;(declare (inline %at))
       (assert (null (cdr indexes)))
       (if error-policy
 
@@ -419,7 +419,7 @@
                :format-arguments (list (first indexes) size size)))
             (%at))))))
 
-
+;; FIXME Redo to at/at-safe variant
 (defpolymorph-compiler-macro at (ring-buffer &rest) (&whole form buf &rest indexes &environment env)
  (let ((type (%form-type buf env)))
     (let ((elem-type
@@ -445,7 +445,7 @@
                           (if (>= maybe-pos (length ,dataname))
                               (aref ,dataname (- maybe-pos (length ,dataname)))
                               (aref ,dataname maybe-pos)))))
-                 (declare (inline ,%at))
+                 ;(declare (inline ,%at))
                  ,(if error-policy
                       (let ((indexes (butlast (butlast indexes))))
                         `(let ((,indname ,(first indexes)))

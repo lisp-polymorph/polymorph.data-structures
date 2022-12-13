@@ -1,11 +1,15 @@
 ;;;; package.lisp
 
-(defpackage #:polymorph.data-structures
-  (:use #:cl #:polymorphic-functions #:introspect-ctype
-        #:polymorph.copy-cast #:polymorph.macros)
-  (:shadow #:find)
-  (:shadowing-import-from #:polymorph.maths #:=)
+(uiop:define-package #:polymorph.data-structures
+  (:use)
+  (:mix #:polymorphic-functions #:polymorph.maths #:introspect-ctype
+       #:polymorph.copy-cast #:polymorph.macros
+       #:polymorph.access #:polymorph.traversable
+       #:common-lisp)
+  (:reexport #:polymorph.traversable)
   (:import-from #:introspect-ctype #:default #:ind)
+  (:import-from #:polymorph.traversable #:next)
+  (:shadow #:intersection #:difference #:union #:subsetp #:supersetp)
   ;; TODO export stuff here
   (:export #:dl-list
            #:front #:back
