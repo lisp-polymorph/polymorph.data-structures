@@ -416,7 +416,7 @@
 
 
 
-(defpolymorph (setf at-safe) ((new t) (container hash-map) (key t)) (values t &optional)
+(defpolymorph (setf at-safe) ((new t) (container hash-map) (key t)) (values t boolean &optional)
   (insert container key new))
 
 (polymorph.macros::%def (iter-hashmap (:include iter)) (:copy)
@@ -460,6 +460,7 @@
       (iterator-end (c)
         (declare (ignore c))
         res))))
+
 
 (defun %hmtest ()
   (declare (optimize speed))

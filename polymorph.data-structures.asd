@@ -9,7 +9,6 @@
     :depends-on (#:polymorph.access
                  #:polymorph.maths
                  #:polymorph.copy-cast
-                 #:polymorph.macros
                  #:polymorph.traversable)
     :components ((:module "src"
                   :components
@@ -22,7 +21,7 @@
                    ;(:file "ring-buffer")
                    (:file "priority-queue")
                    (:file "red-black-tree")
-                   (:file "constructors")
                    (:file "hash-map")
                    (:file "iterators-sketch")
-                   (:file "slices")))))
+                   (:file "slices")
+                   (:file "constructors")))))
