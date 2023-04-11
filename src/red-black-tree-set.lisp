@@ -19,8 +19,8 @@
     (:mut data t))
 
   (def rbt ()
-    (:mut root rbt-node (allocate-instance (find-class 'node)))
-    (:mut sentinel rbt-node (allocate-instance (find-class 'node)))
+    (:mut root rbt-node (allocate-instance (find-class 'rbt-node)))
+    (:mut sentinel rbt-node (allocate-instance (find-class 'rbt-node)))
     (:mut size ind)))
   
 
@@ -105,7 +105,7 @@
     (values)))
 
 ;; ()/[] denote red/black nodes
-(defpolymorph (rb-insert-fixup :inline :maybe) ((tree rb-tree) (z rbt-node)) null
+(defpolymorph (rb-insert-fixup :inline t) ((tree rb-tree) (z rbt-node)) null
   (loop :for p :of-type rbt-node = (parent z)
         :while (eq (color (parent z)) :red)
         :do (bind (((pp :infer) (parent p)))
@@ -157,7 +157,7 @@
 (defpolymorph next-node ((node rb-tree)) (or rb-tree null)
   (flet ((sentinelp (node)
            (eq node (left node))))
-    ;;(declare (dynamic-extent #'sentinelp))
+    (declare (dynamic-extent #'sentinelp))
     (if (sentinelp (right node))
         (loop :with x = node
               :for parent = (parent x)
@@ -172,7 +172,7 @@
 (defpolymorph prev ((node rb-tree)) (or rb-tree null)
   (flet ((sentinelp (node)
            (eq node (left node))))
-    ;;(declare (dynamic-extent #'sentinelp))
+    (declare (dynamic-extent #'sentinelp))
     (if (sentinelp (left node))
         (loop :with x = node
               :for parent = (parent x)
@@ -184,7 +184,7 @@
               :do (setf x (right x))
               :finally (return x)))))
 
-(defpolymorph (%find :inline t) ((tree rb-tree) (item t)) (values rbt-node boolean)
+(defpolymorph (%find :inline t) ((tree rb-tree) (item t)) (values rbt-node &optional)
   (bind (((parent :infer) (sentinel tree))
          ((x :infer) (root tree)))
     (loop :until (node-null x tree)
@@ -192,7 +192,7 @@
               (if (polymorph.maths:< item (data x))
                   (setf x (left x))
                   (setf x (right x)))
-          :finally (return (values parent t)))))
+          :finally (return parent))))
 
 
 (defpolymorph-compiler-macro %find (rb-tree t) (&whole form tree item &environment env)
@@ -225,6 +225,19 @@
                                       :finally (return (values ,parent t))))))))
             form)))))
 
+
+(defpolymorph (%find-node :inline t) ((tree rb-tree) (item t)) (values rbt-node &optional)
+  (bind (((parent :infer) (sentinel tree))
+         ((x :infer) (root tree)))
+    (loop :until (node-null x tree)
+          :do (setf parent x)
+              (cond
+                ((= (data x) item) (return parent))
+                ((polymorph.maths:< item (data x))
+                 (setf x (left x)))
+                (t (setf x (right x))))
+          :finally (return parent))))
+
 (defpolymorph insert ((tree rb-tree) (item t)) (values rbt-node &optional)
   (bind* (((y :infer) (%find tree item))
           ((z :infer) (make-rbt-node :data item
@@ -238,7 +251,7 @@
           (t
            (funcall #'(setf right) z y)))
     (rb-insert-fixup tree z)
-    (setf (size tree) (the ind (1+ (size tree))))
+    (incf (size tree))
     z))
 
 (defpolymorph-compiler-macro insert (rb-tree t) (&whole form tree item &environment env)
@@ -271,7 +284,7 @@
                      (t
                       (setf (right ,y) ,z)))
                (rb-insert-fixup ,treename ,z)
-               (setf (size ,treename) (the ind (1+ (size ,treename))))
+               (incf (size ,treename))
                ,z))))))
 
 ;; links NEW with OLD's parents
@@ -333,44 +346,47 @@
         :finally (setf (color x) :black))
   (values))
 
-(defpolymorph erase ((tree rb-tree) (z rbt-node)) rbt-node
-  (bind* (((y :infer) z)
-          ((delete-color :infer) (color y))
-          (sub))
-    (cond ((node-null (the rbt-node (left z)) tree)
-           (setf sub (right z))
-           (transplant tree z (the rbt-node sub)))
-          ((node-null (the rbt-node (right z)) tree)
-           (setf sub (left z))
-           (transplant tree z (the rbt-node sub)))
-          ;; two children, we need to swap y with its successor
-          (t
-           (loop :for w :of-type rbt-node = (right z) :then (left w)
-                 :until (node-null (the rbt-node (left w)) tree)
-                 :finally (setf y w
-                                delete-color (color w)))
-           (setf sub (right y)) ; right child may be a sentinel
-           ;;  (z)
-           ;;     (right z)
-           ;;   ...
-           ;;  (y)
-           ;;     (sub)
-           ;; note y is not deleted but moved to replace z. Sub replaces y
-           (if (eq y (right z))
-               (setf (parent sub) y)
-               (progn
-                 (transplant tree y (the rbt-node sub)) ; y had no left child
-                 (setf (right y) (right z)
-                       (parent (right z)) y)))
-           (transplant tree z (the rbt-node y))
-           (setf (left y) (left z)
-                 (parent (left z)) y
-                 (color y) (color z))))
-    ;; removing red nodes does not affect invariants
-    (when (eq delete-color :black)
-      (rb-delete-fixup tree (the rbt-node sub)))
-    (decf (size tree))
-    z))
+(defpolymorph erase ((tree rb-tree) (item t)) (values boolean &optional)
+  (bind ((z (%find-node tree item)))
+    (when (= (data z) item)
+      (bind* (((y :infer) z)
+              ((delete-color :infer) (color y))
+              (sub))
+        (cond ((node-null (left z) tree)
+               (setf sub (right z))
+               (transplant tree z (the rbt-node sub)))
+              ((node-null (the rbt-node (right z)) tree)
+               (setf sub (left z))
+               (transplant tree z (the rbt-node sub)))
+              ;; two children, we need to swap y with its successor
+              (t
+               (loop :for w :of-type rbt-node = (right z) :then (left w)
+                     :until (node-null (the rbt-node (left w)) tree)
+                     :finally (setf y w
+                                    delete-color (color w)))
+               (setf sub (right y))     ; right child may be a sentinel
+               ;;  (z)
+               ;;     (right z)
+               ;;   ...
+               ;;  (y)
+               ;;     (sub)
+               ;; note y is not deleted but moved to replace z. Sub replaces y
+               (if (eq y (right z))
+                   (setf (parent sub) y)
+                   (progn
+                     (transplant tree y (the rbt-node sub)) ; y had no left child
+                     (setf (right y) (right z)
+                           (parent (right z)) y)))
+               (transplant tree z (the rbt-node y))
+               (setf (left y) (left z)
+                     (parent (left z)) y
+                     (color y) (color z))))
+        ;; removing red nodes does not affect invariants
+        (when (eq delete-color :black)
+          (rb-delete-fixup tree (the rbt-node sub)))
+        (decf (size tree))
+        t))))
+
 
 (defpolymorph check ((tree rb-tree)) null
   (labels ((recur (node)
@@ -385,8 +401,7 @@
                                     (eq (color (right node)) :black))
                                l)
                               (t nil)))))))
-    ;; TODO why does this break? it works with labels normally
-    ;;(declare (dynamic-extent #'recur))
+    (declare (dynamic-extent #'recur))
     (let ((root (root tree))
           (sentinel (sentinel tree)))
       (assert (and (eq (color root) :black)
@@ -418,7 +433,8 @@
                    ;;(right %node) %node
                    ;;(parent %node) %node
                    ;;(data %node) (default type)
-                    (left %node) %node)
+                    (left %node) %node
+                    (right %node) %node)
              %node))
          (tree
            (funcall (intern
@@ -445,7 +461,8 @@
                    (let ((%node (allocate-instance (find-class 'rbt-node))))
                      (declare (type rbt-node %node))
                      (setf* (color %node) :black
-                            (left %node) %node)
+                            (left %node) %node
+                            (right %node) %node)
                      %node))
                  (tree
                    (,(intern
@@ -472,7 +489,7 @@
                       (check tree))
              (print :deleting...)
              (loop for item in inserted
-                   do (erase tree (%find tree item))
+                   do (erase tree item)
                       (check tree))
              (print :mixed...)
              (loop initially (loop for x in (loop repeat 1000 collect (random 1000))
@@ -480,7 +497,7 @@
                    while (plusp (size tree))
                    do (if (zerop (random 4))
                           (push (insert tree (random 1000)) inserted)
-                          (erase tree (%find tree (data (pop inserted)))))
+                          (erase tree (data (pop inserted))))
                       (check tree)))))
 
 (defun rb-adhoc-test-fast ()
@@ -496,24 +513,22 @@
                       (check tree))
              (print :deleting...)
              (loop for item in inserted
-                   do (let ((toerase (%find tree (the fixnum item))))
-                        (declare (type rbt-node toerase))
-                        (erase tree toerase)
-                        (check tree)))
+                   do (erase tree (the fixnum item))
+                      (check tree))
              (print :mixed...)
              (loop initially (loop for x in (loop repeat 1000 collect (random 1000))
                                    do (push (insert tree (the fixnum x)) inserted))
                    while (plusp (size tree))
                    do (if (zerop (random 4))
                           (push (insert tree (the fixnum (random 1000))) inserted)
-                          (erase tree (%find tree (the fixnum
-                                                       (data
-                                                        (the rbt-node (pop inserted)))))))
+                          (erase tree (the fixnum
+                                           (data
+                                            (the rbt-node (pop inserted))))))
                       (check tree)))))
 
 
 (defun %test ()
-  (declare (optimize (speed 3)))
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (let ((rbt (rb-tree 'fixnum)))
     (declare (type (rb-tree fixnum) rbt))
     (insert rbt 100)))
@@ -528,3 +543,49 @@
     (time (loop :for x :of-type fixnum :across ar
                 :do (insert rbt x)))
     rbt))
+
+
+
+;; Iterators and such
+
+
+(polymorph.macros::%def (iter-rb-tree (:include iter)) (:copy)
+  (:mut node rbt-node (error "Supply a red black tree node"))
+  (tree rb-tree (error "Supply a tree")))
+
+
+(defpolymorph (next :inline t) ((rbi iter-rb-tree)) (values t &optional)
+  (if (node-null (node rbi) (tree rbi))
+      (iter-stop)
+      (prog1 (data (node rbi))
+        (let ((next (node rbi))
+              (tree (tree rbi)))
+          (if (node-null (right next) tree)
+              (progn
+                (loop :while (and (not (eql 0 (parent next)))
+                                  (eq (right (parent next)) next))
+                      :do (setf* next (parent next)))
+                (when (not (eql 0 (parent next)))
+                  (setf* next (parent next))))
+              (progn
+                (setf* next (right next))
+                (loop :until (node-null (left next) tree)
+                      :do (setf* next (left next)))))
+          (setf (node rbi) next)))))
+
+
+(defpolymorph iter ((rbt rb-tree)) (values iter-rb-tree &optional)
+  (let ((first (root rbt)))
+    (loop :until (node-null (left first) rbt)
+          :do (setf* first (left first)))
+    (iter-rb-tree :node first
+                  :tree rbt)))
+
+
+(defpolymorph collect ((it iter) (type (eql rb-tree)) &optional ((combine function) #'identity))
+    (values rb-tree &optional)
+  (declare (ignorable type))
+  (let ((res (rb-tree t)))
+    (handler-case (loop (insert res (multiple-value-call combine (next it))))
+      (iterator-end ()
+        res))))

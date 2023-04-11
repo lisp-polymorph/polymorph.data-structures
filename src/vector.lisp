@@ -2,7 +2,7 @@
 
 
 
-(def vec (:eq :copy)
+(def vec (:copy)
   (:mut data (simple-array t (cl:*)))
   (:mut size ind))
 

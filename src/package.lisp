@@ -2,8 +2,8 @@
 
 (uiop:define-package #:polymorph.data-structures
   (:use)
-  (:mix #:polymorphic-functions #:polymorph.maths #:introspect-ctype
-       #:polymorph.copy-cast #:polymorph.macros
+  (:mix #:polymorphic-functions #:polymorph.macros #:polymorph.maths
+       #:introspect-ctype #:polymorph.copy-cast
        #:polymorph.access #:polymorph.traversable
        #:common-lisp)
   (:reexport #:polymorph.traversable)
