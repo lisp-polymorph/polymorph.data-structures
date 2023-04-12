@@ -238,8 +238,17 @@
                 (t (setf x (right x))))
           :finally (return parent))))
 
-(defpolymorph insert ((tree rb-tree) (item t)) (values rbt-node &optional)
-  (bind* (((y :infer) (%find tree item))
+(defpolymorph insert ((tree rb-tree) (item t)) (values boolean &optional)
+  (bind* (((y :infer) (bind (((parent :infer) (sentinel tree))
+                             ((x :infer) (root tree)))
+                       (loop :until (node-null x tree)
+                             :do (setf parent x)
+                                 (cond
+                                   ((= (data x) item) (return-from insert nil))
+                                   ((polymorph.maths:< item (data x))
+                                    (setf x (left x)))
+                                   (t (setf x (right x))))
+                             :finally (return parent))))
           ((z :infer) (make-rbt-node :data item
                                      :parent y
                                      :color :red
@@ -252,8 +261,9 @@
            (funcall #'(setf right) z y)))
     (rb-insert-fixup tree z)
     (incf (size tree))
-    z))
+    t))
 
+#||
 (defpolymorph-compiler-macro insert (rb-tree t) (&whole form tree item &environment env)
   (let ((type (%form-type tree env)))
     (if (alexandria:type= type 'rbt)
@@ -286,6 +296,7 @@
                (rb-insert-fixup ,treename ,z)
                (incf (size ,treename))
                ,z))))))
+||#
 
 ;; links NEW with OLD's parents
 (defpolymorph transplant ((tree rb-tree) (old rbt-node) (new rbt-node)) null
@@ -388,36 +399,19 @@
         t))))
 
 
-(defpolymorph check ((tree rb-tree)) null
-  (labels ((recur (node)
-             (if (node-null node tree)
-                 1
-                 (let ((l (recur (left node)))
-                       (r (recur (right node))))
-                   (and l r (= l r) ; black height
-                        (cond ((eq (color node) :black)
-                               (1+ l))
-                              ((and (eq (color (left node)) :black) ; red
-                                    (eq (color (right node)) :black))
-                               l)
-                              (t nil)))))))
-    (declare (dynamic-extent #'recur))
-    (let ((root (root tree))
-          (sentinel (sentinel tree)))
-      (assert (and (eq (color root) :black)
-                   (node-null (parent root) tree)
-                   (eq (color sentinel) :black)
-                   (eq sentinel (left sentinel))
-                   (recur root)))
-      (values))))
 
-(defun tree-to-list (root tree)
-  "Returns the contents of the binary tree rooted at ROOT as a list."
-  (cond ((node-null root tree) nil)
-        (t
-         (list root
-               (tree-to-list (left root) tree)
-               (tree-to-list (right root) tree)))))
+(defpolymorph contains ((container rb-tree) (item t)) (values boolean &optional)
+  (bind (((x :infer) (root container)))
+    (loop :until (node-null x container)
+          :do (cond
+                ((= (data x) item) (return t))
+                ((polymorph.maths:< item (data x))
+                 (setf x (left x)))
+                (t (setf x (right x))))
+          :finally (return nil))))
+
+(defpolymorph empty-p ((container rb-tree)) (values boolean &optional)
+  (node-null (root container) container))
 
 
 (declaim (ftype (function (symbol &optional list) (values rb-tree &optional)) rb-tree))
@@ -476,6 +470,40 @@
             ;(dolist (x ,init)
             ;  (insert tree (the ,type x))
             tree))))
+
+
+
+(defpolymorph check ((tree rb-tree)) null
+  (labels ((recur (node)
+             (if (node-null node tree)
+                 1
+                 (let ((l (recur (left node)))
+                       (r (recur (right node))))
+                   (and l r (= l r) ; black height
+                        (cond ((eq (color node) :black)
+                               (1+ l))
+                              ((and (eq (color (left node)) :black) ; red
+                                    (eq (color (right node)) :black))
+                               l)
+                              (t nil)))))))
+    (declare (dynamic-extent #'recur))
+    (let ((root (root tree))
+          (sentinel (sentinel tree)))
+      (assert (and (eq (color root) :black)
+                   (node-null (parent root) tree)
+                   (eq (color sentinel) :black)
+                   (eq sentinel (left sentinel))
+                   (recur root)))
+      (values))))
+
+(defun tree-to-list (root tree)
+  "Returns the contents of the binary tree rooted at ROOT as a list."
+  (cond ((node-null root tree) nil)
+        (t
+         (list root
+               (tree-to-list (left root) tree)
+               (tree-to-list (right root) tree)))))
+
 
 (defun rb-adhoc-test ()
   (declare (optimize debug safety))
@@ -580,6 +608,66 @@
           :do (setf* first (left first)))
     (iter-rb-tree :node first
                   :tree rbt)))
+
+
+
+;; TODO The following can be optimized, need to think more
+
+(polymorph.macros::%def (iter-rb-tree-intersect (:include iter)) ()
+  (fiter iter-rb-tree (error "Supply first RBTreeSet"))
+  (sset rb-tree (error "Supply second RBTreeSet")))
+
+
+(defpolymorph (next :inline t) ((inter iter-rb-tree-intersect)) (values t &optional)
+  (let ((it (fiter inter))
+        (set (sset inter)))
+    (loop (let ((val (next it)))
+            (when (contains set val)
+              (return val))))))
+
+(defpolymorph (intersection :inline t) ((first rb-tree) (second rb-tree)) (values iter-rb-tree-intersect &optional)
+  (iter-rb-tree-intersect :fiter (iter first) :sset second))
+
+
+(polymorph.macros::%def (iter-rb-tree-difference (:include iter)) ()
+  (fiter iter-rb-tree (error "Supply first RBTreeSet"))
+  (sset rb-tree  (error "Supply second RBTreeSet")))
+
+
+(defpolymorph (next :inline t) ((dif iter-rb-tree-difference)) (values t &optional)
+  (let ((it (fiter dif))
+        (set (sset dif)))
+    (loop (let ((val (next it)))
+            (unless (contains set val)
+              (return val))))))
+
+(defpolymorph (difference :inline t) ((first rb-tree) (second rb-tree)) (values iter-rb-tree-difference &optional)
+  (iter-rb-tree-difference :fiter (iter first) :sset second))
+
+
+(polymorph.macros::%def (iter-rb-tree-symmetric-difference (:include iter)) ()
+  (difchain chain-it (error "Supply a dif")))
+
+(defpolymorph (next :inline t) ((symdif iter-rb-tree-symmetric-difference)) (values t &optional)
+  (next (difchain symdif)))
+
+(defpolymorph (symmetric-difference :inline t) ((first rb-tree) (second rb-tree)) (values iter-rb-tree-symmetric-difference &optional)
+  (iter-rb-tree-symmetric-difference :difchain (chain (difference first second) (difference second first))))
+
+
+(polymorph.macros::%def (iter-rb-tree-union (:include iter)) ()
+  (uchain chain-it (error "Supply a union")))
+
+(defpolymorph (next :inline t) ((union iter-rb-tree-union)) (values t &optional)
+  (next (uchain union)))
+
+(defpolymorph (union :inline t) ((first rb-tree) (second rb-tree)) (values iter-rb-tree-union  &optional)
+  (if (> (size first) (size second))
+      (iter-rb-tree-union  :uchain (chain (iter first)
+                                          (difference second first)))
+      (iter-rb-tree-union  :uchain (chain (iter second)
+                                          (difference first second)))))
+
 
 
 (defpolymorph collect ((it iter) (type (eql rb-tree)) &optional ((combine function) #'identity))

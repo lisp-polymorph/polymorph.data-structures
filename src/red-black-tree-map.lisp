@@ -251,8 +251,20 @@
                 (t (setf x (right x))))
           :finally (return parent))))
 
-(defpolymorph insert ((tree rb-tree-map) (key t) (value t)) (values rbtm-node &optional)
-  (bind* (((y :infer) (%find tree key))
+
+;; TODO improve the code quality here, like wtf is this
+(defpolymorph insert ((tree rb-tree-map) (key t) (value t)) (values t boolean &optional)
+  (bind* (((y :infer) (bind (((parent :infer) (sentinel tree))
+                             ((x :infer) (root tree)))
+                        (loop :until (node-null x tree)
+                              :do (setf parent x)
+                                  (cond
+                                    ((= (key x) key) (return-from insert (multiple-value-prog1 (values (value x) t)
+                                                                           (setf (value x) value))))
+                                    ((polymorph.maths:< key (key x))
+                                     (setf x (left x)))
+                                    (t (setf x (right x))))
+                              :finally (return parent))))
           ((z :infer) (make-rbtm-node :key key
                                       :value value
                                       :parent y
@@ -266,8 +278,9 @@
            (funcall #'(setf right) z y)))
     (rb-insert-fixup tree z)
     (incf (size tree))
-    z))
+    (values nil nil)))
 
+#||
 (defpolymorph-compiler-macro insert (rb-tree-map t t) (&whole form tree key value &environment env)
   (let ((type (%form-type tree env)))
     (if (alexandria:type= type 'rbtm)
@@ -311,6 +324,7 @@
                (rb-insert-fixup ,treename ,z)
                (incf (size ,treename))
                ,z))))))
+||#
 
 ;; links NEW with OLD's parents
 (defpolymorph transplant ((tree rb-tree-map) (old rbtm-node) (new rbtm-node)) null
@@ -411,6 +425,43 @@
           (rb-delete-fixup tree (the rbtm-node sub)))
         (decf (size tree))
         t))))
+
+
+(defpolymorph (at :inline t) ((container rb-tree-map) (key t)) (values t &optional)
+  (bind (((x :infer) (root container)))
+    (loop :until (node-null x container)
+          :do (cond
+                ((= (key x) key) (return (value x)))
+                ((polymorph.maths:< key (key x))
+                 (setf x (left x)))
+                (t (setf x (right x))))
+          :finally (error "Key not found in the container"))))
+
+(defpolymorph (at-safe :inline t) ((container rb-tree-map) (key t)) (values t boolean &optional)
+  (bind (((x :infer) (root container)))
+    (loop :until (node-null x container)
+          :do (cond
+                ((= (key x) key) (return (values (value x) t)))
+                ((polymorph.maths:< key (key x))
+                 (setf x (left x)))
+                (t (setf x (right x))))
+          :finally (return (values nil nil)))))
+
+
+
+(defpolymorph ((setf at) :inline t) ((new t) (container rb-tree-map) (key t)) (values t &optional)
+  (bind (((x :infer) (root container)))
+    (loop :until (node-null x container)
+          :do (cond
+                ((= (key x) key) (return (setf (value x) new)))
+                ((polymorph.maths:< key (key x))
+                 (setf x (left x)))
+                (t (setf x (right x))))
+          :finally (error "Key not found in the container"))))
+
+;; FIXME Error about # of return values -- investigate
+(defpolymorph ((setf at-safe) :inline t) ((new t) (container rb-tree-map) (key t)) (values t boolean &optional)
+  (insert container key new))
 
 
 

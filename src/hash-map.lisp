@@ -202,7 +202,7 @@
 
 
 (polymorph.macros::%def (iter-set-union (:include iter)) ()
-  (uchain chain-it (error "Supply a dif")))
+  (uchain chain-it (error "Supply a union")))
 
 (defpolymorph (next :inline t) ((union iter-set-union)) (values t &optional)
   (next (uchain union)))
@@ -220,8 +220,7 @@
   (declare (ignorable type))
   (let ((res (hashset t)))
     (handler-case (loop (insert res (multiple-value-call combine (next it))))
-      (iterator-end (c)
-        (declare (ignore c))
+      (iterator-end ()
         res))))
 
 ;; Hash map
@@ -266,7 +265,7 @@
                                        node (next-node node))))))
     (setf (data hm) newdata)))
 
-
+;; FIXME
 (defpolymorph hashmap ((key-type symbol) (val-type symbol)) (values hash-map &optional)
   (declare (ignorable key-type val-type))
   (hash-map))
