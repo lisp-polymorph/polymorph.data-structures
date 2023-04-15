@@ -533,7 +533,58 @@
             ;  (insert tree (the ,type x))
             tree))))
 
+(defmacro do-rb-tree-map ((key val map) &body body)
+  (alexandria:with-gensyms (cur mapname first next)
+    `(let* ((,mapname ,map)
+            (,cur (let ((,first (root ,mapname)))
+                    (loop :until (node-null (left ,first) ,mapname)
+                          :do (setf* ,first (left ,first)))
+                    ,first)))
+       (let ((,key (key ,cur))
+             (,val (value ,cur)))
+         (loop
+           (if (node-null ,cur ,mapname)
+               (return)
+               (progn
+                 (locally ,@body)
+                 (let ((,next ,cur))
+                   (if (node-null (right ,next) ,mapname)
+                       (progn
+                         (loop :while (and (not (eql 0 (parent ,next)))
+                                           (eq (right (parent ,next)) ,next))
+                               :do (setf* ,next (parent ,next)))
+                         (when (not (eql 0 (parent ,next)))
+                           (setf* ,next (parent ,next))))
+                       (progn
+                         (setf* ,next (right ,next))
+                         (loop :until (node-null (left ,next) ,mapname)
+                               :do (setf* ,next (left ,next)))))
+                   (setf ,cur ,next))
+                 (setf ,key (key ,cur)
+                       ,val (value ,cur)))))))))
+                
 
+
+(defpolymorph = ((first rb-tree-map) (second rb-tree-map)) (values boolean &optional)
+  (and (= (size first) (size second))
+       (not (do-rb-tree-map (fk fv first)
+             (multiple-value-bind (sv ok) (at-safe second fk)
+               (unless (and ok
+                            (= fv sv))
+                 (return t)))))))
+
+
+(defpolymorph deep-copy ((obj rb-tree-map)) (values rb-tree-map &optional)
+  (let ((new (rb-tree-map t t)))                ;; FIXME do something about types
+    (do-rb-tree-map (k v obj)
+      (insert new (deep-copy k) (deep-copy v)))
+    new))
+
+(defpolymorph shallow-copy ((obj rb-tree-map)) (values rb-tree-map &optional)
+  (let ((new (rb-tree-map t t)))                ;; FIXME do something about types
+    (do-rb-tree-map (k v obj)
+      (insert new k v))
+    new))
 
 ;; Iterators and such
 
