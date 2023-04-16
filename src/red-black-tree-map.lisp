@@ -459,7 +459,7 @@
                 (t (setf x (right x))))
           :finally (error "Key not found in the container"))))
 
-;; FIXME Error about # of return values -- investigate
+
 (defpolymorph ((setf at-safe) :inline t) ((new t) (container rb-tree-map) (key t)) (values t boolean &optional)
   (insert container key new))
 
